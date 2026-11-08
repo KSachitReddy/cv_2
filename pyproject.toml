@@ -17,6 +17,7 @@ dependencies = [
     "python-pptx>=1.0",
     "tqdm>=4.66",
     "streamlit>=1.40",
+    "plotly>=7.1.0",
 ]
 
 # Short commands:  uv run bench | report | slides | build | demo
