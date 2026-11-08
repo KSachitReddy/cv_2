@@ -1,0 +1,140 @@
+{
+  "meta": {
+    "date": "2026-11-08T16:46:06",
+    "device": "cpu",
+    "device_name": "CPU (x86_64, 4 threads)",
+    "torch_threads": 4,
+    "num_images": 100,
+    "num_gt_boxes": 709,
+    "dataset": "COCO val2017 (first N image ids, sorted)",
+    "batch_size": 1,
+    "warmup_images": 10,
+    "eval_score_threshold": 0.001,
+    "max_detections": 100,
+    "input_size": {
+      "torchvision": "short side 800 (max 1333)",
+      "yolo": "640 letterbox"
+    },
+    "timing": "end-to-end per image: preprocessing + forward + post-processing (NMS); image decoding excluded",
+    "versions": {
+      "python": "3.13.5",
+      "torch": "2.15.0+cpu",
+      "torchvision": "0.29.2+cpu",
+      "ultralytics": "8.4.207",
+      "pycocotools": "2.0.11",
+      "opencv": "5.0.0",
+      "numpy": "2.5.4"
+    },
+    "notes": [
+      "No CUDA GPU found: ran on CPU with N=100 images and skipped YOLOv8m (largest YOLO model)."
+    ]
+  },
+  "models": {
+    "FasterRCNN-R50-FPN-v2": {
+      "family": "two-stage",
+      "params_M": 43.712278,
+      "weight_file_MB": 175.221657,
+      "latency_ms_mean": 4411.369884030063,
+      "latency_ms_std": 650.577627982042,
+      "latency_ms_median": 4344.695143498029,
+      "fps": 0.22668695355158866,
+      "num_detections": 9173,
+      "mAP": 0.5601538898952361,
+      "mAP50": 0.769668403266587,
+      "mAP75": 0.6130609455908155,
+      "mAP_small": 0.4014152819996858,
+      "mAP_medium": 0.6008582212335948,
+      "mAP_large": 0.7409879489212018,
+      "AR100": 0.668694382125211
+    },
+    "FasterRCNN-MobileNetV3-FPN": {
+      "family": "two-stage",
+      "params_M": 19.386354,
+      "weight_file_MB": 77.844807,
+      "latency_ms_mean": 735.5298920098357,
+      "latency_ms_std": 122.6626000221221,
+      "latency_ms_median": 723.3734339988587,
+      "fps": 1.3595640515268517,
+      "num_detections": 8445,
+      "mAP": 0.391381863447114,
+      "mAP50": 0.5938338052497218,
+      "mAP75": 0.40543751738557793,
+      "mAP_small": 0.20543760972546096,
+      "mAP_medium": 0.45011091466855346,
+      "mAP_large": 0.6183008895125913,
+      "AR100": 0.5277134944075027
+    },
+    "YOLOv8n": {
+      "family": "one-stage",
+      "params_M": 3.1572,
+      "weight_file_MB": 6.549796,
+      "latency_ms_mean": 53.497401060085394,
+      "latency_ms_std": 9.124265412041417,
+      "latency_ms_median": 50.62328749954759,
+      "fps": 18.692496835067818,
+      "num_detections": 8031,
+      "mAP": 0.4530808474819335,
+      "mAP50": 0.620615269802311,
+      "mAP75": 0.4867141763758943,
+      "mAP_small": 0.29026792672633583,
+      "mAP_medium": 0.4702311978083455,
+      "mAP_large": 0.6994154187354782,
+      "AR100": 0.5754807955382059
+    },
+    "YOLOv8s": {
+      "family": "one-stage",
+      "params_M": 11.16656,
+      "weight_file_MB": 22.588772,
+      "latency_ms_mean": 132.97356864986796,
+      "latency_ms_std": 21.767613434210293,
+      "latency_ms_median": 127.89210399932927,
+      "fps": 7.520291514722712,
+      "num_detections": 7361,
+      "mAP": 0.5381265284627346,
+      "mAP50": 0.6925279185914305,
+      "mAP75": 0.6109884066111125,
+      "mAP_small": 0.3658214638372101,
+      "mAP_medium": 0.5681221234536135,
+      "mAP_large": 0.744321430234143,
+      "AR100": 0.666911512644547
+    }
+  },
+  "samples": [
+    {
+      "file": "sample1.jpg",
+      "image_id": 9590,
+      "reason": "crowded scene",
+      "gt_objects": 29,
+      "gt_small_objects": 17,
+      "left_boxes": 28,
+      "right_boxes": 14
+    },
+    {
+      "file": "sample2.jpg",
+      "image_id": 7511,
+      "reason": "small objects",
+      "gt_objects": 16,
+      "gt_small_objects": 15,
+      "left_boxes": 27,
+      "right_boxes": 4
+    },
+    {
+      "file": "sample3.jpg",
+      "image_id": 7088,
+      "reason": "typical scene",
+      "gt_objects": 4,
+      "gt_small_objects": 1,
+      "left_boxes": 5,
+      "right_boxes": 3
+    },
+    {
+      "file": "sample4.jpg",
+      "image_id": 8211,
+      "reason": "typical scene",
+      "gt_objects": 6,
+      "gt_small_objects": 2,
+      "left_boxes": 12,
+      "right_boxes": 4
+    }
+  ]
+}

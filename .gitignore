@@ -1,0 +1,10 @@
+# Re-created automatically: `uv sync` (environment), `uv run bench` (COCO data + model weights)
+.venv/
+data/
+weights/
+
+# Python / editor leftovers
+__pycache__/
+*.pyc
+.~lock.*#
+~$*

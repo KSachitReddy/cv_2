@@ -1,0 +1,46 @@
+[project]
+name = "cv26-rcnn-vs-yolo"
+version = "1.0.0"
+description = "DS307 Assignment 2, Project 26: two-stage (Faster R-CNN) vs one-stage (YOLOv8) detectors for speed and accuracy"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.5",
+    "torchvision>=0.20",
+    "ultralytics>=8.3",
+    "pycocotools>=2.0.8",
+    "opencv-python>=4.10",
+    "matplotlib>=3.8",
+    "numpy>=1.26",
+    "pillow>=10",
+    "python-docx>=1.1",
+    "python-pptx>=1.0",
+    "tqdm>=4.66",
+    "streamlit>=1.40",
+]
+
+# Short commands:  uv run bench | report | slides | build | demo
+[project.scripts]
+bench = "tasks:bench"
+report = "tasks:report"
+slides = "tasks:slides"
+build = "tasks:build"
+demo = "tasks:demo"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["tasks.py", "common.py", "benchmark.py", "figures.py", "demo.py", "build_report.py", "build_slides.py"]
+
+# CPU-only PyTorch (much smaller download). On a machine with an NVIDIA GPU, delete the two
+# sections below and run `uv sync` again to get the CUDA build.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
