@@ -1,12 +1,14 @@
 """
-demo.py - Advanced Computer Vision Intelligence Studio & Neural Pipeline Simulator
+demo.py - Advanced Computer Vision Intelligence Studio, Neural Pipeline Simulator & Live Model Race
 Comparing Two-Stage (Faster R-CNN) vs One-Stage (YOLOv8) Detectors
 
 Features:
 - Live Side-by-Side Detection Studio (1-click Presets, Custom Uploads, Webcam Stream)
-- Visual Consensus & Detection Diff Map (Pairwise IoU matching: Agreed vs Exclusive Detections)
+- Live Model Race Simulator (Real-time stopwatch, multi-stage progress bars, and physical speed battle)
+- Animated Neural Pipeline Simulator (Visual laser scan, feature heatmap bloom, anchor ripple, RPN swarm, RoIAlign zoom)
+- Visual Consensus & Detection Diff Map (Pairwise IoU bipartite matching with agreed vs exclusive detections)
+- Object-Level Sub-Pixel Inspector (Enlarged crop inspection with IoU overlap and COCO scale classification)
 - Interactive Sensitivity Sweep Curve (Detections vs Confidence Threshold)
-- Neural Pipeline Simulator & Step Runner (RPN proposals, RoIAlign, Anchor-Free Grids, Latency Waterfall)
 - Interactive Benchmark Analytics Studio with dynamic Plotly charts from results.json
 - Edge Hardware Deployment & Production Feasibility Advisor (Jetson, Raspberry Pi, iPhone, RTX 4090)
 - Architecture & Methodology Deep Dive (RPN vs Anchor-Free, Pareto frontier)
@@ -166,7 +168,6 @@ def draw_consensus_map(img, b1, s1, n1, b2, s2, n2, matches, u1, u2):
     """
     canvas = img.copy()
 
-    # 1. Agreed detections (Green)
     for i, j, iou in matches:
         box = b1[i]
         x1, y1, x2, y2 = [int(v) for v in box]
@@ -176,7 +177,6 @@ def draw_consensus_map(img, b1, s1, n1, b2, s2, n2, matches, u1, u2):
         cv2.rectangle(canvas, (x1, y1 - th - 6), (x1 + tw + 4, y1), (0, 160, 0), -1)
         cv2.putText(canvas, tag, (x1 + 2, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
 
-    # 2. Faster R-CNN exclusive (Blue)
     for i in u1:
         x1, y1, x2, y2 = [int(v) for v in b1[i]]
         cv2.rectangle(canvas, (x1, y1), (x2, y2), (214, 120, 42), 2)
@@ -185,7 +185,6 @@ def draw_consensus_map(img, b1, s1, n1, b2, s2, n2, matches, u1, u2):
         cv2.rectangle(canvas, (x1, y1 - th - 6), (x1 + tw + 4, y1), (214, 120, 42), -1)
         cv2.putText(canvas, tag, (x1 + 2, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
 
-    # 3. YOLO exclusive (Orange)
     for j in u2:
         x1, y1, x2, y2 = [int(v) for v in b2[j]]
         cv2.rectangle(canvas, (x1, y1), (x2, y2), (52, 104, 235), 2)
@@ -208,7 +207,7 @@ def load_benchmark_data():
     return None
 
 
-# ----------------------------------------------------------------------------- Simulation Helpers
+# ----------------------------------------------------------------------------- Simulation & Animation Helpers
 def extract_rpn_proposals(model_info, image_bgr, max_props=100):
     """Extract real RPN proposals directly from torchvision Faster R-CNN."""
     try:
@@ -377,12 +376,13 @@ def streamlit_app():
             border-radius: 6px;
             margin-bottom: 15px;
         }
-        .consensus-card {
-            background: #F0FDF4;
-            border: 1px solid #BBF7D0;
-            border-radius: 10px;
-            padding: 12px;
-            text-align: center;
+        .race-box {
+            background: #0F172A;
+            color: #F8FAFC;
+            border-radius: 12px;
+            padding: 18px;
+            margin-bottom: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
         </style>
     """, unsafe_allow_html=True)
@@ -394,7 +394,7 @@ def streamlit_app():
     col_t1, col_t2 = st.columns([3, 1])
     with col_t1:
         st.markdown('<div class="main-title">🎯 Object Detection Intelligence Studio</div>', unsafe_allow_html=True)
-        st.markdown('<div class="subtitle">Two-Stage (Faster R-CNN) vs One-Stage (YOLOv8) Detector Benchmarking, Consensus Mapping & Neural Simulation</div>', unsafe_allow_html=True)
+        st.markdown('<div class="subtitle">Two-Stage (Faster R-CNN) vs One-Stage (YOLOv8) Detector Benchmarking, Consensus Mapping & Live Simulation</div>', unsafe_allow_html=True)
     with col_t2:
         device_badge = f"🖥️ Hardware: **{dev.type.upper()}**"
         if dev.type == "cuda":
@@ -423,17 +423,16 @@ def streamlit_app():
         st.caption("DS307 Computer Vision • Assignment 2 • Project 26")
 
     # Main Tabs
-    tab_playground, tab_consensus, tab_sim, tab_benchmark, tab_deploy, tab_architecture, tab_chat = st.tabs([
+    tab_playground, tab_sim, tab_consensus, tab_benchmark, tab_deploy, tab_architecture, tab_chat = st.tabs([
         "🔬 Live Detection Studio",
-        "🎯 Visual Consensus & Diff Map",
-        "🎮 Neural Pipeline Simulator",
+        "🎮 Neural Simulator & Live Race",
+        "🎯 Consensus Diff & Object Zoom",
         "📊 Benchmark & Analytics",
         "🚀 Edge Deployment Advisor",
         "🧠 Architecture & Methodology",
         "💬 CV Intelligence Assistant"
     ])
 
-    # Shared image state handling
     img = None
     selected_desc = ""
 
@@ -521,14 +520,12 @@ def streamlit_app():
             left, right = load(left_name), load(right_name)
             outs, det_records, raw_results, stats = run_pair_detailed(left, right, img, thr)
 
-            # Store in session state for other tabs
             st.session_state["active_sim_image"] = img
             st.session_state["last_detection_stats"] = stats
             st.session_state["last_detection_records"] = det_records
             st.session_state["last_raw_results"] = raw_results
             st.session_state["last_outs"] = outs
 
-            # Head-to-Head Comparison Banner
             ms_left = stats[0]["ms"]
             ms_right = stats[1]["ms"]
             speedup = ms_left / ms_right if ms_right > 0 else 1.0
@@ -548,7 +545,6 @@ def streamlit_app():
             """
             st.markdown(banner_html, unsafe_allow_html=True)
 
-            # Images Display
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown(f'<span class="badge-two-stage">TWO-STAGE</span> **{stats[0]["name"]}**', unsafe_allow_html=True)
@@ -605,7 +601,6 @@ def streamlit_app():
             st.subheader("💾 1-Click Export Suite")
             exp1, exp2 = st.columns(2)
             with exp1:
-                # Composite side-by-side
                 gap = np.full((img.shape[0], 10, 3), 255, dtype=np.uint8)
                 composite = np.hstack([outs[0], gap, outs[1]])
                 _, comp_jpg = cv2.imencode(".jpg", composite)
@@ -632,17 +627,236 @@ def streamlit_app():
                 )
 
     # =========================================================================
-    # TAB 2: VISUAL CONSENSUS & DETECTION DIFF MAP
+    # TAB 2: NEURAL PIPELINE SIMULATOR & LIVE INFERENCE RACE
+    # =========================================================================
+    with tab_sim:
+        st.subheader("🎮 Live Neural Pipeline Simulator & Model Race")
+        st.write("Experience the physical speed and internal neural operations of Two-Stage vs One-Stage architectures through live animations and a side-by-side inference race.")
+
+        sim_img = st.session_state.get("active_sim_image")
+        if sim_img is None:
+            if os.path.exists(SAMPLE_PRESETS[0]["file"]):
+                sim_img = cv2.imread(SAMPLE_PRESETS[0]["file"])
+            else:
+                sim_img = np.zeros((480, 640, 3), np.uint8)
+
+        # ----------------- SECTION 1: LIVE INFERENCE RACE
+        st.markdown("### 🏁 1. The Live Model Race (Physical Speed Battle)")
+        st.write("Click below to watch both models compete in real time. Observe how YOLO finishes almost instantaneously while Faster R-CNN sequentially evaluates hundreds of region proposals.")
+
+        if st.button("🏁 Start Live Inference Race!", type="primary", use_container_width=True):
+            r_col1, r_col2 = st.columns(2)
+            left_model = load(left_name)
+            right_model = load(right_name)
+
+            with r_col1:
+                st.markdown(f"**🔵 {left_name} (Two-Stage)**")
+                p_left = st.progress(0, text="Waiting at start line...")
+                t_left = st.empty()
+                img_left = st.empty()
+            with r_col2:
+                st.markdown(f"**🟠 {right_name} (One-Stage)**")
+                p_right = st.progress(0, text="Waiting at start line...")
+                t_right = st.empty()
+                img_right = st.empty()
+
+            # Execute YOLO first (fast)
+            t0_yolo = time.perf_counter()
+            p_right.progress(20, text="Unified dense regression pass (P3-P5)...")
+            time.sleep(0.04)
+            p_right.progress(70, text="Anchor-free decoupled head...")
+            (b_r, s_r, _, n_r), ms_r = common.timed_detect(right_model, sim_img)
+            p_right.progress(100, text=f"🏆 FINISHED in {ms_r:.0f} ms ({1000/ms_r:.1f} FPS)!")
+            t_right.success(f"⚡ **YOLO Finished in {ms_r:.0f} ms!**")
+            out_yolo = common.draw(sim_img, b_r, s_r, n_r, thr, common.FAMILY_BGR["one-stage"])
+            img_right.image(cv2.cvtColor(out_yolo, cv2.COLOR_BGR2RGB), use_container_width=True)
+
+            # Animate Faster R-CNN's sequential pipeline while timing
+            t0_rcnn = time.perf_counter()
+            p_left.progress(10, text="Stage 1: Resizing & FPN Feature Maps...")
+            time.sleep(0.08)
+            p_left.progress(25, text="Stage 1: RPN sliding anchor boxes (proposing 1,000 RoIs)...")
+            time.sleep(0.12)
+
+            # RoI loop animation
+            for roi_pct in [40, 55, 70, 85]:
+                p_left.progress(roi_pct, text=f"Stage 2: Sequential RoIAlign & MLP Head evaluation (RoI {int(roi_pct*10)}/1000)...")
+                time.sleep(0.15)
+
+            (b_l, s_l, _, n_l), ms_l = common.timed_detect(left_model, sim_img)
+            p_left.progress(100, text=f"DONE in {ms_l:.0f} ms ({1000/ms_l:.1f} FPS).")
+            t_left.info(f"🐢 **Faster R-CNN Finished in {ms_l:.0f} ms**")
+            out_rcnn = common.draw(sim_img, b_l, s_l, n_l, thr, common.FAMILY_BGR["two-stage"])
+            img_left.image(cv2.cvtColor(out_rcnn, cv2.COLOR_BGR2RGB), use_container_width=True)
+
+            speed_diff = ms_l / ms_r if ms_r > 0 else 1.0
+            st.success(f"🎉 **Race Verdict:** {right_name} crossed the finish line **{speed_diff:.1f}x faster** than {left_name}!")
+
+        st.markdown("---")
+
+        # ----------------- SECTION 2: ANIMATED LAYER-BY-LAYER VISUALIZER
+        st.markdown("### 🎬 2. Animated Layer-by-Layer Neural Pipeline")
+        st.write("Watch an automated animation of the internal neural network layers processing the image.")
+
+        sim_col1, sim_col2 = st.columns([1, 1])
+        with sim_col1:
+            chosen_pipeline = st.radio("Choose Neural Pipeline to Animate:", ["🔵 Faster R-CNN (Two-Stage)", "🟠 YOLOv8 (One-Stage)"], horizontal=True)
+        with sim_col2:
+            anim_speed = st.select_slider("Animation Playback Speed:", options=["Slow (Educational)", "Normal", "Fast"], value="Normal")
+
+        delay = 0.12 if anim_speed == "Slow (Educational)" else (0.07 if anim_speed == "Normal" else 0.03)
+
+        if st.button("▶️ Play Live Neural Animation", use_container_width=True):
+            anim_placeholder = st.empty()
+            caption_placeholder = st.empty()
+
+            h, w = sim_img.shape[:2]
+
+            if "Faster R-CNN" in chosen_pipeline:
+                # 1. Laser scanline
+                caption_placeholder.info("Stage 1.1: Backbone Convolutional Scanline Feature Extraction...")
+                for y in range(0, h, max(20, h // 8)):
+                    f = sim_img.copy()
+                    cv2.line(f, (0, y), (w, y), (0, 255, 255), 3)
+                    anim_placeholder.image(cv2.cvtColor(f, cv2.COLOR_BGR2RGB), use_container_width=True)
+                    time.sleep(delay)
+
+                # 2. FPN heatmap bloom
+                caption_placeholder.info("Stage 1.2: Feature Pyramid Network (FPN) Multi-scale activations...")
+                sim_model = load(left_name)
+                _, features = extract_rpn_proposals(sim_model, sim_img, max_props=10)
+                heatmap = extract_feature_heatmap(features, sim_img.shape)
+                if heatmap is not None:
+                    for alpha in [0.2, 0.4, 0.6]:
+                        blended = cv2.addWeighted(sim_img, 1.0 - alpha, heatmap, alpha, 0)
+                        anim_placeholder.image(cv2.cvtColor(blended, cv2.COLOR_BGR2RGB), use_container_width=True)
+                        time.sleep(delay)
+
+                # 3. Anchor ripple & RPN Proposals
+                caption_placeholder.info("Stage 1.3: Region Proposal Network (RPN) anchor evaluation & candidate proposal swarm...")
+                props, _ = extract_rpn_proposals(sim_model, sim_img, max_props=80)
+                for k in [15, 35, 60, 80]:
+                    p_canvas = draw_rpn_visualization(sim_img, props, num_to_draw=k)
+                    anim_placeholder.image(cv2.cvtColor(p_canvas, cv2.COLOR_BGR2RGB), use_container_width=True)
+                    time.sleep(delay)
+
+                # 4. RoIAlign & Box Head
+                caption_placeholder.info("Stage 2: RoIAlign Bilinear Extraction & Box Head Refinement...")
+                (b, s, _, n), _ = common.timed_detect(sim_model, sim_img)
+                final_canvas = common.draw(sim_img, b, s, n, thr, common.FAMILY_BGR["two-stage"])
+                anim_placeholder.image(cv2.cvtColor(final_canvas, cv2.COLOR_BGR2RGB), use_container_width=True)
+                caption_placeholder.success("✅ Faster R-CNN Pipeline Complete: High-precision localization achieved.")
+
+            else:
+                # YOLOv8 Animation
+                caption_placeholder.info("Stage 1: Letterbox 640x640 Fixed Geometry Preprocessing...")
+                r = min(640 / h, 640 / w)
+                nh, nw = int(h * r), int(w * r)
+                resized = cv2.resize(sim_img, (nw, nh))
+                letterbox = np.full((640, 640, 3), 114, dtype=np.uint8)
+                dx, dy = (640 - nw) // 2, (640 - nh) // 2
+                letterbox[dy:dy+nh, dx:dx+nw] = resized
+                anim_placeholder.image(cv2.cvtColor(letterbox, cv2.COLOR_BGR2RGB), use_container_width=True)
+                time.sleep(delay * 2)
+
+                # Grids flashing
+                for stride in [32, 16, 8]:
+                    caption_placeholder.info(f"Stage 2: Multi-scale Feature Pyramid Grid Stride {stride} (Stride 8 = small, 16 = med, 32 = large)...")
+                    grid_canvas = draw_yolo_grid_demo(sim_img, stride=stride)
+                    anim_placeholder.image(cv2.cvtColor(grid_canvas, cv2.COLOR_BGR2RGB), use_container_width=True)
+                    time.sleep(delay)
+
+                # Single-pass anchor-free burst
+                caption_placeholder.info("Stage 3: Concurrent Single-Pass Anchor-Free Center Point Regression...")
+                sim_yolo = load(right_name)
+                (b, s, _, n), _ = common.timed_detect(sim_yolo, sim_img)
+                keep = s >= thr
+                active_boxes = b[keep]
+                active_canvas = draw_yolo_grid_demo(sim_img, stride=32, active_boxes=active_boxes)
+                anim_placeholder.image(cv2.cvtColor(active_canvas, cv2.COLOR_BGR2RGB), use_container_width=True)
+                time.sleep(delay * 2)
+
+                # Final NMS
+                caption_placeholder.info("Stage 4: Fast Vectorized NMS in < 3 ms...")
+                final_yolo = common.draw(sim_img, b, s, n, thr, common.FAMILY_BGR["one-stage"])
+                anim_placeholder.image(cv2.cvtColor(final_yolo, cv2.COLOR_BGR2RGB), use_container_width=True)
+                caption_placeholder.success("✅ YOLOv8 Pipeline Complete: Real-time throughput in one single pass.")
+
+        # Static Step-by-Step Viewer
+        st.markdown("---")
+        st.markdown("#### 🔬 3. Static Step-by-Step Layer Inspection")
+        step_opt = st.select_slider(
+            "Scrub Layer Manually:",
+            options=[
+                "1. FPN Feature Heatmap",
+                "2. RPN Proposals Swarm (Faster R-CNN)",
+                "3. RoIAlign 7x7 Sub-Pixel Grid",
+                "4. Anchor-Free Multi-Scale Grid (YOLO)",
+                "5. Latency Waterfall Chart"
+            ]
+        )
+
+        sim_model = load(left_name)
+
+        if step_opt == "1. FPN Feature Heatmap":
+            _, features = extract_rpn_proposals(sim_model, sim_img, max_props=5)
+            hm = extract_feature_heatmap(features, sim_img.shape)
+            if hm is not None:
+                st.image(cv2.cvtColor(cv2.addWeighted(sim_img, 0.6, hm, 0.4, 0), cv2.COLOR_BGR2RGB),
+                         caption="FPN Level P2 Convolutional Feature Heatmap (Real Deep Neural Activation)", use_container_width=True)
+        elif step_opt == "2. RPN Proposals Swarm (Faster R-CNN)":
+            props, _ = extract_rpn_proposals(sim_model, sim_img, max_props=80)
+            st.image(cv2.cvtColor(draw_rpn_visualization(sim_img, props, num_to_draw=60), cv2.COLOR_BGR2RGB),
+                     caption="Top Candidate Proposals generated by the Region Proposal Network before classification", use_container_width=True)
+        elif step_opt == "3. RoIAlign 7x7 Sub-Pixel Grid":
+            props, _ = extract_rpn_proposals(sim_model, sim_img, max_props=5)
+            best_box = props[0] if len(props) > 0 else [50, 50, 150, 150]
+            st.image(cv2.cvtColor(draw_roialign_demo(sim_img, best_box), cv2.COLOR_BGR2RGB),
+                     caption="RoIAlign 7x7 Feature Map Extraction with Bilinear Sample Points (No coordinate rounding)", use_container_width=True)
+        elif step_opt == "4. Anchor-Free Multi-Scale Grid (YOLO)":
+            sim_yolo = load(right_name)
+            (b, s, _, _), _ = common.timed_detect(sim_yolo, sim_img)
+            st.image(cv2.cvtColor(draw_yolo_grid_demo(sim_img, stride=32, active_boxes=b[s >= thr]), cv2.COLOR_BGR2RGB),
+                     caption="YOLO Anchor-Free Feature Grid: Active center cells predicting distance vectors", use_container_width=True)
+        elif step_opt == "5. Latency Waterfall Chart":
+            breakdown_df = pd.DataFrame([
+                {"Stage": "Backbone Feature Extraction", "Time (ms)": 45, "Model": "Faster R-CNN (Two-Stage)"},
+                {"Stage": "FPN Multi-Scale Pyramids", "Time (ms)": 25, "Model": "Faster R-CNN (Two-Stage)"},
+                {"Stage": "RPN Candidate Generation", "Time (ms)": 35, "Model": "Faster R-CNN (Two-Stage)"},
+                {"Stage": "RoIAlign Sub-Pixel Crop", "Time (ms)": 40, "Model": "Faster R-CNN (Two-Stage)"},
+                {"Stage": "Box Head MLP (1000 RoIs)", "Time (ms)": 4250, "Model": "Faster R-CNN (Two-Stage)"},
+                {"Stage": "Final Per-Class NMS", "Time (ms)": 16, "Model": "Faster R-CNN (Two-Stage)"},
+
+                {"Stage": "Backbone Feature Extraction", "Time (ms)": 22, "Model": "YOLOv8n (One-Stage)"},
+                {"Stage": "FPN Multi-Scale Pyramids", "Time (ms)": 16, "Model": "YOLOv8n (One-Stage)"},
+                {"Stage": "RPN Candidate Generation", "Time (ms)": 0, "Model": "YOLOv8n (One-Stage)"},
+                {"Stage": "RoIAlign Sub-Pixel Crop", "Time (ms)": 0, "Model": "YOLOv8n (One-Stage)"},
+                {"Stage": "Box Head MLP (1000 RoIs)", "Time (ms)": 12, "Model": "YOLOv8n (One-Stage)"},
+                {"Stage": "Final Per-Class NMS", "Time (ms)": 3, "Model": "YOLOv8n (One-Stage)"},
+            ])
+            fig_waterfall = px.bar(
+                breakdown_df,
+                x="Stage",
+                y="Time (ms)",
+                color="Model",
+                barmode="group",
+                title="Computational Latency Breakdown per Pipeline Stage",
+                color_discrete_map={"Faster R-CNN (Two-Stage)": "#2563EB", "YOLOv8n (One-Stage)": "#F59E0B"}
+            )
+            fig_waterfall.update_layout(height=380, margin=dict(l=20, r=20, t=40, b=20))
+            st.plotly_chart(fig_waterfall, use_container_width=True)
+
+    # =========================================================================
+    # TAB 3: VISUAL CONSENSUS & OBJECT-LEVEL ZOOM INSPECTOR
     # =========================================================================
     with tab_consensus:
-        st.subheader("🎯 Visual Consensus & Detection Diff Map")
-        st.write("Compare exact bounding box overlap between Faster R-CNN and YOLOv8 to see where they **agree**, where **Faster R-CNN caught small objects missed by YOLO**, and where **YOLO caught objects missed by Faster R-CNN**.")
+        st.subheader("🎯 Visual Consensus, Diff Map & Sub-Pixel Object Zoom")
+        st.write("Compare exact bounding box overlap between Faster R-CNN and YOLOv8 to see where they **agree**, where **Faster R-CNN caught small objects missed by YOLO**, and inspect specific objects with sub-pixel magnification.")
 
         curr_img = st.session_state.get("active_sim_image")
         curr_raw = st.session_state.get("last_raw_results")
 
         if curr_img is not None and curr_raw is not None:
-            # Extract filtered detections
             b1, s1, n1 = curr_raw[0][3], curr_raw[0][4], curr_raw[0][5]
             b2, s2, n2 = curr_raw[1][3], curr_raw[1][4], curr_raw[1][5]
 
@@ -652,32 +866,80 @@ def streamlit_app():
             consensus_rate = (len(matches) / total_unique * 100) if total_unique > 0 else 0
             mean_iou = np.mean([m[2] for m in matches]) if len(matches) > 0 else 0.0
 
-            # Consensus metrics row
             cm1, cm2, cm3, cm4 = st.columns(4)
             cm1.metric("Agreed Detections", f"{len(matches)} objects", f"{consensus_rate:.1f}% consensus")
             cm2.metric("Mean Agreement IoU", f"{mean_iou:.2f}", "Overlap precision")
             cm3.metric(f"Exclusive to {left_name.split('-')[0]}", f"{len(u1)} objects", "Missed by YOLO")
             cm4.metric(f"Exclusive to {right_name}", f"{len(u2)} objects", "Missed by FRCNN")
 
-            # Draw consensus map
             consensus_canvas = draw_consensus_map(curr_img, b1, s1, n1, b2, s2, n2, matches, u1, u2)
             st.image(cv2.cvtColor(consensus_canvas, cv2.COLOR_BGR2RGB),
                      caption="Visual Consensus Overlay: Green = Agreed by both | Blue = Faster R-CNN only | Orange = YOLO only",
                      use_container_width=True)
 
-            _, con_jpg = cv2.imencode(".jpg", consensus_canvas)
-            st.download_button(
-                "📥 Download Visual Consensus Map (JPG)",
-                data=con_jpg.tobytes(),
-                file_name="consensus_diff_map.jpg",
-                mime="image/jpeg"
-            )
+            # Sub-Pixel Object-Level Inspector
+            st.markdown("---")
+            st.subheader("🔍 Sub-Pixel Object Crop Inspector")
+            st.write("Select any detected object below to zoom into its bounding box and examine how both architectures localized it.")
+
+            object_options = []
+            for idx, (i, j, iou_score) in enumerate(matches):
+                object_options.append(f"🟢 Agreed Object #{idx+1}: {n1[i]} (IoU {iou_score:.2f})")
+            for idx, i in enumerate(u1):
+                object_options.append(f"🔵 Faster R-CNN Only #{idx+1}: {n1[i]} ({s1[i]*100:.0f}%)")
+            for idx, j in enumerate(u2):
+                object_options.append(f"🟠 YOLO Only #{idx+1}: {n2[j]} ({s2[j]*100:.0f}%)")
+
+            if object_options:
+                chosen_obj = st.selectbox("Choose Detected Object to Zoom In:", object_options)
+                # Find target box
+                t_box = None
+                t_meta = {}
+                if chosen_obj.startswith("🟢"):
+                    match_idx = int(chosen_obj.split("#")[1].split(":")[0]) - 1
+                    i, j, iou_val = matches[match_idx]
+                    t_box = b1[i]
+                    t_meta = {"name": n1[i], "frcnn_score": s1[i], "yolo_score": s2[j], "iou": iou_val, "status": "Agreed by Both"}
+                elif chosen_obj.startswith("🔵"):
+                    u_idx = int(chosen_obj.split("#")[1].split(":")[0]) - 1
+                    i = u1[u_idx]
+                    t_box = b1[i]
+                    t_meta = {"name": n1[i], "frcnn_score": s1[i], "yolo_score": 0.0, "iou": 0.0, "status": "Faster R-CNN Exclusive"}
+                else:
+                    u_idx = int(chosen_obj.split("#")[1].split(":")[0]) - 1
+                    j = u2[u_idx]
+                    t_box = b2[j]
+                    t_meta = {"name": n2[j], "frcnn_score": 0.0, "yolo_score": s2[j], "iou": 0.0, "status": "YOLO Exclusive"}
+
+                if t_box is not None:
+                    pad = 20
+                    x1, y1, x2, y2 = [int(v) for v in t_box]
+                    h_im, w_im = curr_img.shape[:2]
+                    cx1, cy1 = max(0, x1 - pad), max(0, y1 - pad)
+                    cx2, cy2 = min(w_im, x2 + pad), min(h_im, y2 + pad)
+                    obj_crop = curr_img[cy1:cy2, cx1:cx2].copy()
+
+                    area_px = (x2 - x1) * (y2 - y1)
+                    scale_cat = "Small (<32² px)" if area_px < 32**2 else ("Medium (32²-96² px)" if area_px < 96**2 else "Large (>96² px)")
+
+                    z_col1, z_col2 = st.columns([1, 1])
+                    with z_col1:
+                        st.image(cv2.cvtColor(obj_crop, cv2.COLOR_BGR2RGB), caption=f"Magnified Crop: {t_meta['name']}", use_container_width=True)
+                    with z_col2:
+                        st.markdown(f"**Category:** `{t_meta['name']}`")
+                        st.markdown(f"**Consensus Status:** `{t_meta['status']}`")
+                        st.markdown(f"**COCO Object Scale:** **{scale_cat}** ({area_px:.0f} px²)")
+                        if t_meta['iou'] > 0:
+                            st.markdown(f"**Bounding Box IoU Overlap:** **{t_meta['iou']:.3f}**")
+                            st.latex(r"\text{IoU} = \frac{\text{Area}(A \cap B)}{\text{Area}(A \cup B)} = " + f"{t_meta['iou']:.2f}")
+                        st.markdown(f"• **Faster R-CNN Confidence:** `{t_meta['frcnn_score']*100:.1f}%`")
+                        st.markdown(f"• **YOLOv8 Confidence:** `{t_meta['yolo_score']*100:.1f}%`")
+            else:
+                st.write("No objects detected above threshold.")
 
             # Sensitivity Sweep Curve
             st.markdown("---")
             st.subheader("📈 Real-Time Confidence Sensitivity Curve")
-            st.write("How do detection counts evolve as the score threshold increases from 0.1 to 0.9?")
-
             sweep_thrs = np.linspace(0.1, 0.9, 9)
             raw_scores1 = curr_raw[0][1]
             raw_scores2 = curr_raw[1][1]
@@ -704,262 +966,8 @@ def streamlit_app():
             )
             fig_curve.update_layout(height=350, margin=dict(l=20, r=20, t=40, b=20))
             st.plotly_chart(fig_curve, use_container_width=True)
-            st.caption("Notice how Faster R-CNN maintains boxes even at higher confidence levels due to two-stage classification calibration, whereas YOLO displays a steep drop at high thresholds.")
         else:
             st.info("Run a detection in the 'Live Detection Studio' tab first to activate the Visual Consensus & Diff Map.")
-
-    # =========================================================================
-    # TAB 3: NEURAL PIPELINE SIMULATOR & STEP RUNNER
-    # =========================================================================
-    with tab_sim:
-        st.subheader("🎮 Interactive Neural Pipeline Simulator")
-        st.write("Step through the internal neural network layers to visualize **how Faster R-CNN and YOLO actually detect objects** under the hood.")
-
-        sim_img = st.session_state.get("active_sim_image")
-        if sim_img is None:
-            if os.path.exists(SAMPLE_PRESETS[0]["file"]):
-                sim_img = cv2.imread(SAMPLE_PRESETS[0]["file"])
-            else:
-                sim_img = np.zeros((480, 640, 3), np.uint8)
-
-        col_cfg1, col_cfg2 = st.columns([1, 1])
-        with col_cfg1:
-            chosen_arch = st.radio(
-                "Select Detector Pipeline to Simulate:",
-                ["🔵 Faster R-CNN (Two-Stage Pipeline)", "🟠 YOLOv8 (One-Stage Anchor-Free Pipeline)"],
-                horizontal=True
-            )
-        with col_cfg2:
-            st.info("💡 **Did You Know?** Faster R-CNN runs an explicit second neural network over every proposed box, while YOLO processes all locations concurrently in one forward tensor operation.")
-
-        st.markdown("---")
-
-        if "Faster R-CNN" in chosen_arch:
-            st.markdown("### 🔵 Faster R-CNN Step-by-Step Pipeline Simulation")
-            rcnn_step = st.select_slider(
-                "Execution Stage:",
-                options=[
-                    "Stage 1: Input & FPN Feature Activation",
-                    "Stage 2: Anchor Box Tiling Grid",
-                    "Stage 3: Region Proposal Network (RPN) Firing",
-                    "Stage 4: RoIAlign Sub-Pixel Feature Extraction",
-                    "Stage 5: Stage-2 Box Head & Final NMS"
-                ]
-            )
-
-            sim_model = load(left_name)
-
-            if rcnn_step == "Stage 1: Input & FPN Feature Activation":
-                st.markdown("""
-                <div class="step-box">
-                    <b>Stage 1: Multi-Scale Feature Pyramid Network (FPN)</b><br>
-                    The input image is resized so its short edge is 800px. A deep convolutional backbone (ResNet-50 / MobileNetV3) extracts multi-level feature representations ($P_2, P_3, P_4, P_5, P_6$). High-level semantics merge with low-level spatial detail.
-                </div>
-                """, unsafe_allow_html=True)
-
-                with st.spinner("Extracting convolutional feature activations from neural network..."):
-                    _, features = extract_rpn_proposals(sim_model, sim_img, max_props=10)
-                    heatmap = extract_feature_heatmap(features, sim_img.shape)
-
-                sc1, sc2 = st.columns(2)
-                with sc1:
-                    st.caption("Input Image (Resized to 800px Short Edge)")
-                    st.image(cv2.cvtColor(sim_img, cv2.COLOR_BGR2RGB), use_container_width=True)
-                with sc2:
-                    st.caption("FPN Level P2 Convolutional Activation Heatmap")
-                    if heatmap is not None:
-                        blended = cv2.addWeighted(sim_img, 0.6, heatmap, 0.4, 0)
-                        st.image(cv2.cvtColor(blended, cv2.COLOR_BGR2RGB), use_container_width=True)
-                    else:
-                        st.image(cv2.cvtColor(sim_img, cv2.COLOR_BGR2RGB), use_container_width=True)
-
-            elif rcnn_step == "Stage 2: Anchor Box Tiling Grid":
-                st.markdown("""
-                <div class="step-box">
-                    <b>Stage 2: Anchor Box Tiling (Pre-RPN)</b><br>
-                    At every spatial position of the feature map, the network places reference anchor boxes with 3 different scales (e.g., $32^2, 64^2, 128^2$) and 3 aspect ratios ($1:1, 1:2, 2:1$) — generating 9 anchor hypotheses per position across ~20,000 spatial locations.
-                </div>
-                """, unsafe_allow_html=True)
-
-                anchor_canvas = sim_img.copy()
-                h, w = anchor_canvas.shape[:2]
-                cx, cy = w // 2, h // 2
-                scales = [60, 110, 160]
-                aspects = [(1, 1), (1, 2), (2, 1)]
-                colors = [(0, 255, 0), (255, 100, 0), (0, 150, 255)]
-                for s, col in zip(scales, colors):
-                    for ar_w, ar_h in aspects:
-                        bw = int(s * np.sqrt(ar_w / ar_h))
-                        bh = int(s * np.sqrt(ar_h / ar_w))
-                        cv2.rectangle(anchor_canvas, (cx - bw//2, cy - bh//2), (cx + bw//2, cy + bh//2), col, 1)
-
-                st.image(cv2.cvtColor(anchor_canvas, cv2.COLOR_BGR2RGB), caption="Sample Anchor Hypotheses (3 scales x 3 aspect ratios) evaluated at grid locations", use_container_width=True)
-
-            elif rcnn_step == "Stage 3: Region Proposal Network (RPN) Firing":
-                st.markdown("""
-                <div class="step-box">
-                    <b>Stage 3: Region Proposal Network (RPN)</b><br>
-                    A lightweight 3x3 conv head evaluates all anchors, predicting a binary <b>objectness score</b> (object vs background) and 4 box deltas. The top 1,000 highest-confidence proposals are retained before NMS reduces them to candidate RoIs.
-                </div>
-                """, unsafe_allow_html=True)
-
-                num_props = st.slider("Number of Real RPN Proposals to Display:", min_value=10, max_value=200, value=60, step=10)
-                with st.spinner("Extracting real candidate proposals from RPN..."):
-                    props, _ = extract_rpn_proposals(sim_model, sim_img, max_props=num_props)
-
-                prop_canvas = draw_rpn_visualization(sim_img, props, num_to_draw=num_props)
-                st.image(cv2.cvtColor(prop_canvas, cv2.COLOR_BGR2RGB), caption=f"Real RPN Output: Top {len(props)} candidate object proposals before classification", use_container_width=True)
-
-            elif rcnn_step == "Stage 4: RoIAlign Sub-Pixel Feature Extraction":
-                st.markdown("""
-                <div class="step-box">
-                    <b>Stage 4: RoIAlign (Preserving Fine Spatial Detail)</b><br>
-                    Unlike older RoIPooling which rounded continuous coordinates (causing quantization misalignment and destroying small objects), <b>RoIAlign uses bilinear interpolation</b> to sample exactly 4 points in each of the 7x7 bins without rounding.
-                </div>
-                """, unsafe_allow_html=True)
-
-                with st.spinner("Extracting top proposal for RoIAlign inspection..."):
-                    props, _ = extract_rpn_proposals(sim_model, sim_img, max_props=5)
-
-                best_box = props[0] if len(props) > 0 else [50, 50, 150, 150]
-                rc1, rc2 = st.columns(2)
-                with rc1:
-                    box_canvas = sim_img.copy()
-                    x1, y1, x2, y2 = [int(v) for v in best_box]
-                    cv2.rectangle(box_canvas, (x1, y1), (x2, y2), (0, 255, 0), 3)
-                    st.image(cv2.cvtColor(box_canvas, cv2.COLOR_BGR2RGB), caption="Target RoI Candidate Box on Original Image", use_container_width=True)
-                with rc2:
-                    roialign_view = draw_roialign_demo(sim_img, best_box)
-                    st.image(cv2.cvtColor(roialign_view, cv2.COLOR_BGR2RGB), caption="RoIAlign 7x7 Feature Map Extraction (Red dots = 4 bilinear sample points per bin)", use_container_width=True)
-
-            elif rcnn_step == "Stage 5: Stage-2 Box Head & Final NMS":
-                st.markdown("""
-                <div class="step-box">
-                    <b>Stage 5: Stage-2 Classification & Refinement MLP Head</b><br>
-                    Each 7x7x256 RoI feature vector is flattened and passed through two 1024-dimension fully-connected layers. It branches into:
-                    1. <b>Class Probabilities:</b> Softmax over 80 COCO categories + background.
-                    2. <b>Class-Specific Box Regression:</b> Fine-tunes the proposal coordinates.
-                    3. <b>Per-Class NMS:</b> Suppresses redundant overlapping boxes.
-                </div>
-                """, unsafe_allow_html=True)
-
-                (b, s, c, n), ms = common.timed_detect(sim_model, sim_img)
-                final_canvas = common.draw(sim_img, b, s, n, thr, (214, 120, 42))
-                st.image(cv2.cvtColor(final_canvas, cv2.COLOR_BGR2RGB), caption=f"Final Detections after Box Head Refinement & NMS ({int((s >= thr).sum())} boxes)", use_container_width=True)
-
-        else:
-            st.markdown("### 🟠 YOLOv8 Step-by-Step Pipeline Simulation")
-            yolo_step = st.select_slider(
-                "Execution Stage:",
-                options=[
-                    "Stage 1: Letterbox Preprocessing (640x640)",
-                    "Stage 2: Multi-Scale Anchor-Free Grids (P3-P5)",
-                    "Stage 3: Anchor-Free Decoupled Head Regression",
-                    "Stage 4: Unified Single-Pass Inference & NMS"
-                ]
-            )
-
-            sim_yolo = load(right_name)
-
-            if yolo_step == "Stage 1: Letterbox Preprocessing (640x640)":
-                st.markdown("""
-                <div class="step-box">
-                    <b>Stage 1: Letterbox Resizing</b><br>
-                    YOLOv8 resizes the input image into a fixed 640x640 canvas while preserving the aspect ratio by adding grey padding borders (value 114). Fixed dimensions allow constant tensor shapes and maximum GPU hardware optimization.
-                </div>
-                """, unsafe_allow_html=True)
-
-                h, w = sim_img.shape[:2]
-                r = min(640 / h, 640 / w)
-                nh, nw = int(h * r), int(w * r)
-                resized = cv2.resize(sim_img, (nw, nh), interpolation=cv2.INTER_LINEAR)
-                letterbox = np.full((640, 640, 3), 114, dtype=np.uint8)
-                dx, dy = (640 - nw) // 2, (640 - nh) // 2
-                letterbox[dy:dy+nh, dx:dx+nw] = resized
-
-                st.image(cv2.cvtColor(letterbox, cv2.COLOR_BGR2RGB), caption=f"Letterbox Image: {w}x{h} px -> 640x640 px with grey padding bars", use_container_width=True)
-
-            elif yolo_step == "Stage 2: Multi-Scale Anchor-Free Grids (P3-P5)":
-                st.markdown("""
-                <div class="step-box">
-                    <b>Stage 2: Multi-Scale Feature Grids (P3, P4, P5)</b><br>
-                    YOLOv8 divides the image into 3 distinct spatial resolutions:
-                    • <b>P3 (Stride 8):</b> 80x80 grid = 6,400 cells -> Dedicated to <b>small objects</b>.<br>
-                    • <b>P4 (Stride 16):</b> 40x40 grid = 1,600 cells -> Dedicated to <b>medium objects</b>.<br>
-                    • <b>P5 (Stride 32):</b> 20x20 grid = 400 cells -> Dedicated to <b>large objects</b>.<br>
-                    Total anchor points: 8,400 grid cells evaluated simultaneously!
-                </div>
-                """, unsafe_allow_html=True)
-
-                stride_choice = st.radio("Choose Feature Pyramid Stride:", [8, 16, 32], index=2, horizontal=True)
-                grid_canvas = draw_yolo_grid_demo(sim_img, stride=stride_choice)
-                st.image(cv2.cvtColor(grid_canvas, cv2.COLOR_BGR2RGB), caption=f"Feature Grid Stride {stride_choice} ({sim_img.shape[1]//stride_choice} x {sim_img.shape[0]//stride_choice} cells)", use_container_width=True)
-
-            elif yolo_step == "Stage 3: Anchor-Free Decoupled Head Regression":
-                st.markdown("""
-                <div class="step-box">
-                    <b>Stage 3: Anchor-Free Center Point Regression</b><br>
-                    Unlike older YOLOs that used predefined anchor boxes, <b>YOLOv8 is completely anchor-free</b>. Each grid cell center $(c_x, c_y)$ directly projects 4 distance values:
-                    $$\\text{Distance to Left } (d_l), \\text{ Top } (d_t), \\text{ Right } (d_r), \\text{ Bottom } (d_b)$$
-                    using Distribution Focal Loss (DFL). A parallel decoupled branch predicts class probabilities.
-                </div>
-                """, unsafe_allow_html=True)
-
-                (b, s, c, n), _ = common.timed_detect(sim_yolo, sim_img)
-                keep = s >= thr
-                active_boxes = b[keep]
-
-                yolo_active_canvas = draw_yolo_grid_demo(sim_img, stride=32, active_boxes=active_boxes)
-                st.image(cv2.cvtColor(yolo_active_canvas, cv2.COLOR_BGR2RGB), caption="Active Anchor-Free Grid Cells (Orange) projecting distance vectors to 4 boundaries", use_container_width=True)
-
-            elif yolo_step == "Stage 4: Unified Single-Pass Inference & NMS":
-                st.markdown("""
-                <div class="step-box">
-                    <b>Stage 4: Unified Forward Pass</b><br>
-                    All 8,400 anchor points across P3, P4, and P5 are evaluated in a single forward pass without extracting or cropping candidate regions. Fast matrix-based NMS removes overlapping predictions in under 3 milliseconds!
-                </div>
-                """, unsafe_allow_html=True)
-
-                (b, s, c, n), ms = common.timed_detect(sim_yolo, sim_img)
-                final_yolo_canvas = common.draw(sim_img, b, s, n, thr, (52, 104, 235))
-                st.image(cv2.cvtColor(final_yolo_canvas, cv2.COLOR_BGR2RGB), caption=f"Final YOLOv8 Detections after Unified Pass ({int((s >= thr).sum())} boxes in {ms:.0f} ms)", use_container_width=True)
-
-        st.markdown("---")
-        st.subheader("⏱️ Execution Latency Breakdown (Why Faster R-CNN is Slow vs YOLO)")
-        st.write("Where is time actually spent inside the neural network on CPU?")
-
-        breakdown_df = pd.DataFrame([
-            {"Stage": "Backbone Feature Extraction", "Time (ms)": 45, "Model": "Faster R-CNN (Two-Stage)"},
-            {"Stage": "FPN Multi-Scale Pyramids", "Time (ms)": 25, "Model": "Faster R-CNN (Two-Stage)"},
-            {"Stage": "RPN Candidate Generation", "Time (ms)": 35, "Model": "Faster R-CNN (Two-Stage)"},
-            {"Stage": "RoIAlign Sub-Pixel Crop", "Time (ms)": 40, "Model": "Faster R-CNN (Two-Stage)"},
-            {"Stage": "Box Head MLP (1000 RoIs)", "Time (ms)": 4250, "Model": "Faster R-CNN (Two-Stage)"},
-            {"Stage": "Final Per-Class NMS", "Time (ms)": 16, "Model": "Faster R-CNN (Two-Stage)"},
-
-            {"Stage": "Backbone Feature Extraction", "Time (ms)": 22, "Model": "YOLOv8n (One-Stage)"},
-            {"Stage": "FPN Multi-Scale Pyramids", "Time (ms)": 16, "Model": "YOLOv8n (One-Stage)"},
-            {"Stage": "RPN Candidate Generation", "Time (ms)": 0, "Model": "YOLOv8n (One-Stage)"},
-            {"Stage": "RoIAlign Sub-Pixel Crop", "Time (ms)": 0, "Model": "YOLOv8n (One-Stage)"},
-            {"Stage": "Box Head MLP (1000 RoIs)", "Time (ms)": 12, "Model": "YOLOv8n (One-Stage)"},
-            {"Stage": "Final Per-Class NMS", "Time (ms)": 3, "Model": "YOLOv8n (One-Stage)"},
-        ])
-
-        fig_waterfall = px.bar(
-            breakdown_df,
-            x="Stage",
-            y="Time (ms)",
-            color="Model",
-            barmode="group",
-            title="Computational Latency Breakdown per Pipeline Stage",
-            color_discrete_map={
-                "Faster R-CNN (Two-Stage)": "#2563EB",
-                "YOLOv8n (One-Stage)": "#F59E0B"
-            }
-        )
-        fig_waterfall.update_layout(height=380, margin=dict(l=20, r=20, t=40, b=20))
-        st.plotly_chart(fig_waterfall, use_container_width=True)
-
-        st.info("🎯 **The Root Cause:** In Faster R-CNN, **96% of the latency (4,250 ms)** is spent sequentially passing ~1,000 proposed RoIs through the second-stage classification MLP. In YOLOv8, there is no proposal extraction loop — all grid locations are classified in parallel in a single tensor operation!")
 
     # =========================================================================
     # TAB 4: INTERACTIVE BENCHMARK & ANALYTICS STUDIO
@@ -1016,7 +1024,6 @@ def streamlit_app():
             st.plotly_chart(fig_pareto, use_container_width=True)
 
             col_ch1, col_ch2 = st.columns(2)
-
             with col_ch1:
                 st.markdown("#### 2. Accuracy Breakdown by Object Scale")
                 scale_df = df_bench.melt(
@@ -1106,7 +1113,6 @@ def streamlit_app():
         budget_ms = 1000.0 / target_fps
         st.write(f"⏱️ **Target Latency Budget:** $\\le$ **{budget_ms:.1f} ms per frame** ({target_fps} FPS)")
 
-        # Simulated empirical profiles
         hw_profiles = {
             "Raspberry Pi 4 / 5": {
                 "YOLOv8n": {"ms": 36.0, "fps": 27.8, "ram": "150 MB", "opt": "NCNN / ONNX INT8"},
@@ -1353,7 +1359,7 @@ def generate_assistant_response(query, bench_data, live_stats=None):
         "- **Speed Winner:** YOLOv8n achieves **18.7+ FPS** on CPU (~53 ms), making it suitable for live video.\n"
         "- **Accuracy Winner:** Faster R-CNN R50-FPN v2 achieves **56.0% mAP** on COCO val2017, leading significantly on small objects (40.1% vs 29.0%).\n"
         "- **Best Balance:** YOLOv8s delivers **53.8% mAP** (nearly matching Faster R-CNN) while running at **7.5 FPS** (~133 ms), making it an outstanding general-purpose detector.\n\n"
-        "Feel free to explore the new **Visual Consensus & Diff Map** and **Edge Deployment Advisor** tabs in the dashboard!"
+        "Feel free to explore the new **Live Inference Race** and **Sub-Pixel Object Inspector** in the dashboard!"
     )
 
 
