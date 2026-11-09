@@ -1,26 +1,29 @@
 """
-demo.py - Advanced Computer Vision Intelligence Studio, Neural Pipeline Simulator & Live Model Race
+demo.py - Ultimate Computer Vision Intelligence Studio, Neural Simulator & Production Suite
 Comparing Two-Stage (Faster R-CNN) vs One-Stage (YOLOv8) Detectors
 
 Features:
-- Live Side-by-Side Detection Studio (1-click Presets, Custom Uploads, Webcam Stream)
-- Live Model Race Simulator (Real-time stopwatch, multi-stage progress bars, and physical speed battle)
-- Animated Neural Pipeline Simulator (Visual laser scan, feature heatmap bloom, anchor ripple, RPN swarm, RoIAlign zoom)
+- Camera Device Switcher (DirectShow Laptop HD Webcam vs Phone / External Cam)
+- Live Model Race Simulator (Real-time physical speed battle with stage progression)
+- Animated Neural Pipeline Simulator (Laser scanline, FPN heatmap bloom, RPN swarm, RoIAlign zoom)
+- SAHI (Slicing Aided Hyper Inference) for small-object detection enhancement
+- Environmental Stress-Testing / Adversarial Robustness Suite (Rain, Fog, Night Mode, Motion Blur)
+- Official COCO Ground Truth Overlay & Real-Time Error Matrix (TP / FP / FN, Precision, Recall, F1)
+- Video File Processor (Upload MP4/AVI/MOV and render side-by-side video detection)
 - Visual Consensus & Detection Diff Map (Pairwise IoU bipartite matching with agreed vs exclusive detections)
-- Object-Level Sub-Pixel Inspector (Enlarged crop inspection with IoU overlap and COCO scale classification)
-- Interactive Sensitivity Sweep Curve (Detections vs Confidence Threshold)
+- Sub-Pixel Object-Level Inspector (Enlarged crop inspection with IoU overlap and COCO scale classification)
 - Interactive Benchmark Analytics Studio with dynamic Plotly charts from results.json
 - Edge Hardware Deployment & Production Feasibility Advisor (Jetson, Raspberry Pi, iPhone, RTX 4090)
 - Architecture & Methodology Deep Dive (RPN vs Anchor-Free, Pareto frontier)
 - 1-Click Export Suite (Download side-by-side composite, consensus map, and JSON metrics)
 - Interactive CV Intelligence Chat Assistant with rich domain knowledge and quick inquiries
-- Full CLI fallback compatibility
 """
 import argparse
 import io
 import json
 import os
 import sys
+import tempfile
 import time
 from collections import Counter
 
@@ -36,6 +39,8 @@ import common
 ROOT = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR = os.path.join(ROOT, "results")
 RESULTS_JSON = os.path.join(RESULTS_DIR, "results.json")
+DATA_DIR = os.path.join(ROOT, "data")
+ANN_FILE = os.path.join(DATA_DIR, "instances_val2017.json")
 
 TWO_STAGE = ["FasterRCNN-R50-FPN-v2", "FasterRCNN-MobileNetV3-FPN"]
 ONE_STAGE = ["YOLOv8s", "YOLOv8n", "YOLOv8m"]
@@ -47,6 +52,7 @@ SAMPLE_PRESETS = [
         "name": "Sample 1: Crowded Street",
         "file": os.path.join(RESULTS_DIR, "sample1.jpg"),
         "desc": "Dense urban street with many overlapping pedestrians & vehicles (29 GT objects).",
+        "coco_id": 9590,
         "icon": "🚶‍♂️"
     },
     {
@@ -54,6 +60,7 @@ SAMPLE_PRESETS = [
         "name": "Sample 2: Small Objects",
         "file": os.path.join(RESULTS_DIR, "sample2.jpg"),
         "desc": "Challenging scene with distant and tiny objects (16 GT objects, 15 small).",
+        "coco_id": 7511,
         "icon": "🔍"
     },
     {
@@ -61,6 +68,7 @@ SAMPLE_PRESETS = [
         "name": "Sample 3: Indoor Dining",
         "file": os.path.join(RESULTS_DIR, "sample3.jpg"),
         "desc": "Typical indoor dining scene with utensils, table, and chairs (4 GT objects).",
+        "coco_id": 7088,
         "icon": "🍽️"
     },
     {
@@ -68,6 +76,7 @@ SAMPLE_PRESETS = [
         "name": "Sample 4: Sports & Action",
         "file": os.path.join(RESULTS_DIR, "sample4.jpg"),
         "desc": "Active sports movement with players and equipment (6 GT objects).",
+        "coco_id": 8211,
         "icon": "🏃"
     }
 ]
@@ -80,26 +89,139 @@ def load_warm(name):
     return info
 
 
-def run_pair_detailed(left, right, img, thr):
+def capture_laptop_camera_frame(cam_idx=1):
+    """Capture a high-definition frame directly from the chosen camera index via DirectShow."""
+    cap = cv2.VideoCapture(cam_idx, cv2.CAP_DSHOW)
+    if not cap.isOpened():
+        cap = cv2.VideoCapture(cam_idx)
+    if not cap.isOpened():
+        return None
+    ret, frame = cap.read()
+    cap.release()
+    return frame if ret else None
+
+
+def apply_environmental_stress(img, mode='rain', intensity=0.5):
+    """Simulate severe real-world environmental degradation on input image."""
+    h, w = img.shape[:2]
+    out = img.copy()
+
+    if mode == "🌧️ Synthetic Rain":
+        num_drops = int(1200 * intensity)
+        for _ in range(num_drops):
+            x = np.random.randint(0, w)
+            y = np.random.randint(0, h)
+            length = int(18 * intensity) + 5
+            cv2.line(out, (x, y), (x + int(length * 0.35), y + length), (220, 220, 220), 1)
+
+    elif mode == "🌫️ Atmospheric Fog / Haze":
+        haze = np.full_like(img, 215)
+        alpha = min(0.85, 0.65 * intensity + 0.1)
+        out = cv2.addWeighted(img, 1.0 - alpha, haze, alpha, 0)
+
+    elif mode == "🌙 Low-Light / Night Mode":
+        factor = max(0.08, 1.0 - 0.85 * intensity)
+        dark = cv2.convertScaleAbs(img, alpha=factor, beta=0)
+        noise = np.random.normal(0, 18 * intensity, dark.shape).astype(np.int16)
+        out = np.clip(dark.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+
+    elif mode == "🌪️ Motion Blur / Camera Shake":
+        k = max(3, int(29 * intensity))
+        if k % 2 == 0:
+            k += 1
+        kernel = np.zeros((k, k))
+        kernel[k // 2, :] = 1.0 / k
+        out = cv2.filter2D(img, -1, kernel)
+
+    return out
+
+
+def run_sahi_inference(model_info, image_bgr, score_thresh=0.25, iou_thresh=0.5, grid=(2, 2), overlap=0.2):
+    """Slicing Aided Hyper Inference (SAHI) for fine-scale small object detection."""
+    h, w = image_bgr.shape[:2]
+    gh, gw = grid
+
+    tile_w = int(w / (gw - (gw - 1) * overlap))
+    tile_h = int(h / (gh - (gh - 1) * overlap))
+    step_x = int(tile_w * (1 - overlap))
+    step_y = int(tile_h * (1 - overlap))
+
+    all_boxes, all_scores, all_names = [], [], []
+
+    # 1. Global image pass
+    (b_g, s_g, _, n_g), _ = common.timed_detect(model_info, image_bgr)
+    keep_g = s_g >= score_thresh
+    all_boxes.extend(b_g[keep_g])
+    all_scores.extend(s_g[keep_g])
+    all_names.extend([n_g[i] for i in range(len(s_g)) if keep_g[i]])
+
+    # 2. Local sliced tiles
+    y = 0
+    while y < h:
+        x = 0
+        y_end = min(h, y + tile_h)
+        while x < w:
+            x_end = min(w, x + tile_w)
+            tile = image_bgr[y:y_end, x:x_end]
+            if tile.shape[0] > 60 and tile.shape[1] > 60:
+                (b_t, s_t, _, n_t), _ = common.timed_detect(model_info, tile)
+                keep_t = s_t >= score_thresh
+                for b, s, n in zip(b_t[keep_t], s_t[keep_t], [n_t[i] for i in range(len(s_t)) if keep_t[i]]):
+                    all_boxes.append([b[0] + x, b[1] + y, b[2] + x, b[3] + y])
+                    all_scores.append(s)
+                    all_names.append(n)
+            x += step_x
+            if x_end >= w:
+                break
+        y += step_y
+        if y_end >= h:
+            break
+
+    if len(all_boxes) == 0:
+        return np.empty((0, 4)), np.empty(0), []
+
+    all_b = np.array(all_boxes, dtype=np.float32)
+    all_s = np.array(all_scores, dtype=np.float32)
+
+    indices = cv2.dnn.NMSBoxes(
+        [[int(b[0]), int(b[1]), int(b[2] - b[0]), int(b[3] - b[1])] for b in all_b],
+        all_s.tolist(),
+        score_thresh,
+        iou_thresh
+    )
+    if len(indices) > 0:
+        idxs = indices.flatten()
+        return all_b[idxs], all_s[idxs], [all_names[i] for i in idxs]
+    return np.empty((0, 4)), np.empty(0), []
+
+
+def run_pair_detailed(left, right, img, thr, use_sahi=False):
     """Run both detectors on one BGR image.
-    Returns annotated images, detailed detection lists, raw output tuples, and summary statistics.
+    Supports SAHI slicing for small-object enhancement.
     """
     outs, detections_list, raw_results, stats = [], [], [], []
     for info in (left, right):
-        (boxes, scores, coco_ids, names), ms = common.timed_detect(info, img)
-        keep = scores >= thr
-        filtered_boxes = boxes[keep]
-        filtered_scores = scores[keep]
-        filtered_names = [names[i] for i in range(len(scores)) if keep[i]]
+        if use_sahi and info["family"] == "one-stage":
+            t0 = time.perf_counter()
+            boxes, scores, names = run_sahi_inference(info, img, score_thresh=thr)
+            ms = (time.perf_counter() - t0) * 1000.0
+            keep = scores >= thr
+            filtered_boxes, filtered_scores, filtered_names = boxes, scores, names
+        else:
+            (boxes, scores, coco_ids, names), ms = common.timed_detect(info, img)
+            keep = scores >= thr
+            filtered_boxes = boxes[keep]
+            filtered_scores = scores[keep]
+            filtered_names = [names[i] for i in range(len(scores)) if keep[i]]
 
-        annotated = common.draw(img, boxes, scores, names, thr, common.FAMILY_BGR[info["family"]])
+        annotated = common.draw(img, filtered_boxes, filtered_scores, filtered_names, thr, common.FAMILY_BGR[info["family"]])
         outs.append(annotated)
         raw_results.append((boxes, scores, names, filtered_boxes, filtered_scores, filtered_names))
 
         det_records = []
         for b, s, n in zip(filtered_boxes, filtered_scores, filtered_names):
             det_records.append({
-                "model": info["name"],
+                "model": info["name"] + (" (SAHI)" if (use_sahi and info["family"] == "one-stage") else ""),
                 "family": info["family"],
                 "class": n,
                 "confidence": float(s),
@@ -108,11 +230,11 @@ def run_pair_detailed(left, right, img, thr):
         detections_list.append(det_records)
 
         stats.append({
-            "name": info["name"],
+            "name": info["name"] + (" (SAHI)" if (use_sahi and info["family"] == "one-stage") else ""),
             "family": info["family"],
             "ms": ms,
             "fps": 1000.0 / ms if ms > 0 else 0,
-            "boxes": int(keep.sum()),
+            "boxes": int(len(filtered_boxes)),
             "classes_counter": Counter(filtered_names),
             "params_M": info.get("params", 0) / 1e6,
             "weight_mb": info.get("weight_mb", 0)
@@ -161,11 +283,7 @@ def compute_iou_matches(boxes1, boxes2, iou_thresh=0.5):
 
 
 def draw_consensus_map(img, b1, s1, n1, b2, s2, n2, matches, u1, u2):
-    """Draw a visual consensus comparison:
-    - Green: Agreed by both models (IoU >= threshold)
-    - Blue: Unique to Faster R-CNN (Two-stage exclusive)
-    - Orange: Unique to YOLO (One-stage exclusive)
-    """
+    """Draw a visual consensus comparison overlay."""
     canvas = img.copy()
 
     for i, j, iou in matches:
@@ -196,6 +314,81 @@ def draw_consensus_map(img, b1, s1, n1, b2, s2, n2, matches, u1, u2):
     return canvas
 
 
+def load_coco_ground_truth(coco_id):
+    """Load official COCO ground truth bounding boxes and class names for a given image id."""
+    if not os.path.exists(ANN_FILE):
+        return None, None
+    try:
+        from pycocotools.coco import COCO
+        coco = COCO(ANN_FILE)
+        ann_ids = coco.getAnnIds(imgIds=coco_id, iscrowd=False)
+        anns = coco.loadAnns(ann_ids)
+        gt_boxes = []
+        gt_names = []
+        for a in anns:
+            x, y, w, h = a["bbox"]
+            gt_boxes.append([x, y, x + w, y + h])
+            gt_names.append(coco.cats[a["category_id"]]["name"])
+        return np.array(gt_boxes, dtype=np.float32), gt_names
+    except Exception:
+        return None, None
+
+
+def evaluate_against_gt(pred_boxes, pred_classes, gt_boxes, gt_classes, iou_thresh=0.5):
+    """Evaluate predicted boxes against human ground truth to find TP, FP, FN, Precision, Recall, F1."""
+    if gt_boxes is None or len(gt_boxes) == 0:
+        return {"tp": 0, "fp": len(pred_boxes), "fn": 0, "precision": 0.0, "recall": 0.0, "f1": 0.0, "matched_gt": []}
+    if len(pred_boxes) == 0:
+        return {"tp": 0, "fp": 0, "fn": len(gt_boxes), "precision": 0.0, "recall": 0.0, "f1": 0.0, "matched_gt": []}
+
+    matched_gt = set()
+    tp, fp = 0, 0
+
+    for pb, pc in zip(pred_boxes, pred_classes):
+        best_iou = 0.0
+        best_gt_idx = -1
+        for idx, (gb, gc) in enumerate(zip(gt_boxes, gt_classes)):
+            if pc == gc and idx not in matched_gt:
+                x1 = max(pb[0], gb[0])
+                y1 = max(pb[1], gb[1])
+                x2 = min(pb[2], gb[2])
+                y2 = min(pb[3], gb[3])
+                inter = max(0, x2 - x1) * max(0, y2 - y1)
+                area1 = (pb[2] - pb[0]) * (pb[3] - pb[1])
+                area2 = (gb[2] - gb[0]) * (gb[3] - gb[1])
+                union = area1 + area2 - inter
+                iou = inter / max(union, 1e-8)
+                if iou > best_iou:
+                    best_iou = iou
+                    best_gt_idx = idx
+        if best_iou >= iou_thresh:
+            tp += 1
+            matched_gt.add(best_gt_idx)
+        else:
+            fp += 1
+
+    fn = len(gt_boxes) - len(matched_gt)
+    prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    rec = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1 = 2 * (prec * rec) / (prec + rec) if (prec + rec) > 0 else 0.0
+    return {"tp": tp, "fp": fp, "fn": fn, "precision": prec, "recall": rec, "f1": f1, "matched_gt": list(matched_gt)}
+
+
+def draw_gt_overlay(img, gt_boxes, gt_names):
+    """Draw ground truth boxes in gold."""
+    canvas = img.copy()
+    if gt_boxes is None:
+        return canvas
+    for (x1, y1, x2, y2), name in zip(gt_boxes, gt_names):
+        p1, p2 = (int(x1), int(y1)), (int(x2), int(y2))
+        cv2.rectangle(canvas, p1, p2, (0, 215, 255), 2)  # Gold
+        tag = f"GT: {name}"
+        (tw, th), _ = cv2.getTextSize(tag, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)
+        cv2.rectangle(canvas, (p1[0], p1[1] - th - 6), (p1[0] + tw + 4, p1[1]), (0, 180, 220), -1)
+        cv2.putText(canvas, tag, (p1[0] + 2, p1[1] - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 0, 0), 1, cv2.LINE_AA)
+    return canvas
+
+
 def load_benchmark_data():
     """Load saved benchmark results if available."""
     if os.path.exists(RESULTS_JSON):
@@ -207,7 +400,7 @@ def load_benchmark_data():
     return None
 
 
-# ----------------------------------------------------------------------------- Simulation & Animation Helpers
+# ----------------------------------------------------------------------------- Simulation Helpers
 def extract_rpn_proposals(model_info, image_bgr, max_props=100):
     """Extract real RPN proposals directly from torchvision Faster R-CNN."""
     try:
@@ -327,7 +520,6 @@ def streamlit_app():
         initial_sidebar_state="expanded"
     )
 
-    # Custom modern CSS styling
     st.markdown("""
         <style>
         .main-title {
@@ -376,25 +568,16 @@ def streamlit_app():
             border-radius: 6px;
             margin-bottom: 15px;
         }
-        .race-box {
-            background: #0F172A;
-            color: #F8FAFC;
-            border-radius: 12px;
-            padding: 18px;
-            margin-bottom: 15px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
         </style>
     """, unsafe_allow_html=True)
 
     dev = common.get_device()
     bench_data = load_benchmark_data()
 
-    # Header section
     col_t1, col_t2 = st.columns([3, 1])
     with col_t1:
         st.markdown('<div class="main-title">🎯 Object Detection Intelligence Studio</div>', unsafe_allow_html=True)
-        st.markdown('<div class="subtitle">Two-Stage (Faster R-CNN) vs One-Stage (YOLOv8) Detector Benchmarking, Consensus Mapping & Live Simulation</div>', unsafe_allow_html=True)
+        st.markdown('<div class="subtitle">Two-Stage (Faster R-CNN) vs One-Stage (YOLOv8) Detector Benchmarking, SAHI Slicing & Production Advisor</div>', unsafe_allow_html=True)
     with col_t2:
         device_badge = f"🖥️ Hardware: **{dev.type.upper()}**"
         if dev.type == "cuda":
@@ -410,23 +593,30 @@ def streamlit_app():
         right_name = st.selectbox("One-Stage Model (High Speed)", ONE_STAGE, index=1)
 
         thr = st.slider("Detection Confidence Threshold", min_value=0.10, max_value=0.95, value=0.50, step=0.05)
-        iou_match_thr = st.slider("Consensus IoU Matching Threshold", min_value=0.30, max_value=0.90, value=0.50, step=0.05,
-                                  help="IoU overlap required to consider detections from both models as the SAME object.")
+        iou_match_thr = st.slider("Consensus IoU Matching Threshold", min_value=0.30, max_value=0.90, value=0.50, step=0.05)
 
         st.markdown("---")
-        st.subheader("💡 Key Architectural Rule")
-        st.caption(
-            "• **Faster R-CNN:** Propose first, classify later (Two-stage). Excels on small/dense objects, but heavy sequential latency.\n\n"
-            "• **YOLOv8:** Single dense grid regression (One-stage). Anchor-free decoupled head evaluates all cells at once for real-time speed."
-        )
+        st.subheader("⚡ Advanced Extensions")
+        use_sahi = st.checkbox("🔍 Enable SAHI Slicing (2x2 Grid)", value=False, help="Slices image into 2x2 tiles with overlap to boost YOLO small-object accuracy.")
+
+        st.markdown("---")
+        st.subheader("🌪️ Adversarial Stress Testing")
+        enable_stress = st.checkbox("Enable Environmental Stress", value=False)
+        stress_mode = "None"
+        stress_intensity = 0.5
+        if enable_stress:
+            stress_mode = st.radio("Stress Mode:", ["🌧️ Synthetic Rain", "🌫️ Atmospheric Fog / Haze", "🌙 Low-Light / Night Mode", "🌪️ Motion Blur / Camera Shake"])
+            stress_intensity = st.slider("Corruption Intensity", 0.1, 1.0, 0.5, 0.05)
+
         st.markdown("---")
         st.caption("DS307 Computer Vision • Assignment 2 • Project 26")
 
     # Main Tabs
-    tab_playground, tab_sim, tab_consensus, tab_benchmark, tab_deploy, tab_architecture, tab_chat = st.tabs([
+    tab_playground, tab_sim, tab_consensus, tab_video, tab_benchmark, tab_deploy, tab_architecture, tab_chat = st.tabs([
         "🔬 Live Detection Studio",
-        "🎮 Neural Simulator & Live Race",
-        "🎯 Consensus Diff & Object Zoom",
+        "🏁 Neural Simulator & Race",
+        "🎯 Ground Truth & Consensus",
+        "🎥 Video File Processor",
         "📊 Benchmark & Analytics",
         "🚀 Edge Deployment Advisor",
         "🧠 Architecture & Methodology",
@@ -435,17 +625,23 @@ def streamlit_app():
 
     img = None
     selected_desc = ""
+    active_coco_id = None
 
     # =========================================================================
     # TAB 1: LIVE DETECTION STUDIO
     # =========================================================================
     with tab_playground:
         st.subheader("Interactive Detection Playground")
-        st.write("Select an instant sample preset, upload your own image, or capture live video to observe side-by-side performance.")
+        st.write("Select an instant sample preset, upload an image, or capture directly from your **Laptop Integrated HD Webcam** or phone camera.")
 
         input_mode = st.radio(
             "Choose Input Source:",
-            ["✨ Instant Presets (Recommended)", "📁 Upload Custom Image", "📷 Webcam Snapshot", "🎥 Live Webcam Stream"],
+            [
+                "✨ Instant Presets (Recommended)",
+                "💻 Laptop / Phone Camera Snapshot",
+                "🎥 Live Camera Stream",
+                "📁 Upload Custom Image"
+            ],
             horizontal=True
         )
 
@@ -466,32 +662,55 @@ def streamlit_app():
 
             for p in SAMPLE_PRESETS:
                 if p["id"] == chosen_preset_id:
+                    active_coco_id = p["coco_id"]
                     if os.path.exists(p["file"]):
                         img = cv2.imread(p["file"])
                         selected_desc = f"**{p['name']}**: {p['desc']}"
                     else:
                         img = np.zeros((480, 640, 3), np.uint8)
 
-        elif input_mode == "📁 Upload Custom Image":
-            up = st.file_uploader("Upload an image (JPG, PNG, WebP):", type=["jpg", "jpeg", "png", "webp", "bmp"])
-            if up:
-                img = cv2.imdecode(np.frombuffer(up.read(), np.uint8), cv2.IMREAD_COLOR)
-                selected_desc = f"Custom upload: `{up.name}` ({img.shape[1]}x{img.shape[0]} px)"
+        elif input_mode == "💻 Laptop / Phone Camera Snapshot":
+            cam_col1, cam_col2 = st.columns([2, 1])
+            with cam_col1:
+                cam_choice = st.selectbox(
+                    "Select Active Camera Hardware:",
+                    [
+                        "💻 Camera 1: Laptop Built-in HD Webcam (1280x720 DirectShow)",
+                        "📱 Camera 0: Phone / Primary Camera (DirectShow)"
+                    ],
+                    index=0
+                )
+                selected_cam_idx = 1 if "Camera 1" in cam_choice else 0
+            with cam_col2:
+                st.write("")
+                st.write("")
+                take_snap = st.button("📸 Capture Frame from Camera", type="primary", use_container_width=True)
 
-        elif input_mode == "📷 Webcam Snapshot":
-            snap = st.camera_input("Capture frame from camera")
-            if snap:
-                img = cv2.imdecode(np.frombuffer(snap.getvalue(), np.uint8), cv2.IMREAD_COLOR)
-                selected_desc = f"Webcam frame capture ({img.shape[1]}x{img.shape[0]} px)"
+            if take_snap:
+                with st.spinner(f"Accessing Camera {selected_cam_idx}..."):
+                    captured_frame = capture_laptop_camera_frame(selected_cam_idx)
+                    if captured_frame is not None:
+                        st.session_state["cam_snapshot_img"] = captured_frame
+                        st.success(f"Frame captured successfully from Camera {selected_cam_idx} ({captured_frame.shape[1]}x{captured_frame.shape[0]} px)!")
+                    else:
+                        st.error(f"Could not open Camera {selected_cam_idx}. Make sure no other application is using it.")
 
-        elif input_mode == "🎥 Live Webcam Stream":
-            st.info("Live webcam streaming runs frame-by-frame inference. On CPU, MobileNetV3 + YOLOv8n is recommended.")
-            cap_src = st.number_input("Webcam Device Index", 0, 5, 0)
-            max_frames = st.slider("Max Frames", 10, 300, 60, 10)
-            if st.button("▶️ Start Live Stream", type="primary"):
-                cap = cv2.VideoCapture(cap_src)
+            if "cam_snapshot_img" in st.session_state:
+                img = st.session_state["cam_snapshot_img"]
+                selected_desc = f"Live Snapshot from Camera {selected_cam_idx} ({img.shape[1]}x{img.shape[0]} px)"
+
+        elif input_mode == "🎥 Live Camera Stream":
+            st.info("Live streaming runs continuous inference frame-by-frame.")
+            cam_str_choice = st.selectbox("Select Camera for Stream:", ["💻 Camera 1: Laptop Built-in HD Webcam", "📱 Camera 0: Phone / Primary Camera"])
+            str_cam_idx = 1 if "Camera 1" in cam_str_choice else 0
+            max_frames = st.slider("Max Frames to Stream", 10, 300, 60, 10)
+
+            if st.button("▶️ Start Live Camera Stream", type="primary"):
+                cap = cv2.VideoCapture(str_cam_idx, cv2.CAP_DSHOW)
                 if not cap.isOpened():
-                    st.error("Failed to connect to webcam.")
+                    cap = cv2.VideoCapture(str_cam_idx)
+                if not cap.isOpened():
+                    st.error("Failed to connect to selected camera.")
                 else:
                     left, right = load(left_name), load(right_name)
                     st.caption("Running stream... Click 'Stop' in top right to cancel.")
@@ -503,7 +722,7 @@ def streamlit_app():
                         ok, frame = cap.read()
                         if not ok:
                             break
-                        outs, _, _, stats = run_pair_detailed(left, right, frame, thr)
+                        outs, _, _, stats = run_pair_detailed(left, right, frame, thr, use_sahi=use_sahi)
                         for k in range(2):
                             totals[k].append(stats[k]["ms"])
                             holders[k].image(cv2.cvtColor(outs[k], cv2.COLOR_BGR2RGB), use_container_width=True)
@@ -515,26 +734,39 @@ def streamlit_app():
                     cap.release()
                     st.success("Webcam stream completed.")
 
+        elif input_mode == "📁 Upload Custom Image":
+            up = st.file_uploader("Upload an image (JPG, PNG, WebP):", type=["jpg", "jpeg", "png", "webp", "bmp"])
+            if up:
+                img = cv2.imdecode(np.frombuffer(up.read(), np.uint8), cv2.IMREAD_COLOR)
+                selected_desc = f"Custom upload: `{up.name}` ({img.shape[1]}x{img.shape[0]} px)"
+
+        # Apply stress if enabled
+        if img is not None and enable_stress:
+            img = apply_environmental_stress(img, stress_mode, stress_intensity)
+            selected_desc += f" • [Stress: {stress_mode} @ {stress_intensity*100:.0f}%]"
+
         # Process and show detection for static inputs
         if img is not None:
             left, right = load(left_name), load(right_name)
-            outs, det_records, raw_results, stats = run_pair_detailed(left, right, img, thr)
+            outs, det_records, raw_results, stats = run_pair_detailed(left, right, img, thr, use_sahi=use_sahi)
 
             st.session_state["active_sim_image"] = img
             st.session_state["last_detection_stats"] = stats
             st.session_state["last_detection_records"] = det_records
             st.session_state["last_raw_results"] = raw_results
             st.session_state["last_outs"] = outs
+            st.session_state["active_coco_id"] = active_coco_id
 
             ms_left = stats[0]["ms"]
             ms_right = stats[1]["ms"]
             speedup = ms_left / ms_right if ms_right > 0 else 1.0
 
+            sahi_badge = " • <span style='color:#38BDF8; font-weight:600;'>[SAHI Slicing Enabled]</span>" if use_sahi else ""
             banner_html = f"""
             <div class="head-to-head-banner">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
                     <div>
-                        <span style="font-size: 1.25rem; font-weight: 700;">⚔️ Head-to-Head Comparison</span><br>
+                        <span style="font-size: 1.25rem; font-weight: 700;">⚔️ Head-to-Head Comparison</span>{sahi_badge}<br>
                         <span style="color: #94A3B8; font-size: 0.95rem;">{selected_desc}</span>
                     </div>
                     <div style="background: rgba(16, 185, 129, 0.2); border: 1px solid #10B981; padding: 8px 16px; border-radius: 8px;">
@@ -564,7 +796,6 @@ def streamlit_app():
                 m3.metric("Detections", f"{stats[1]['boxes']} boxes")
                 m4.metric("Parameters", f"{stats[1]['params_M']:.1f}M")
 
-            # Interactive Detection Analytics Section
             st.markdown("---")
             st.subheader("🔍 Detection Breakdown & Category Distribution")
 
@@ -574,10 +805,10 @@ def streamlit_app():
 
             if all_classes:
                 chart_df = pd.DataFrame([
-                    {"Category": c, "Count": counts_left.get(c, 0), "Model": f"{stats[0]['name']} (Two-Stage)"}
+                    {"Category": c, "Count": counts_left.get(c, 0), "Model": f"{stats[0]['name']}"}
                     for c in all_classes
                 ] + [
-                    {"Category": c, "Count": counts_right.get(c, 0), "Model": f"{stats[1]['name']} (One-Stage)"}
+                    {"Category": c, "Count": counts_right.get(c, 0), "Model": f"{stats[1]['name']}"}
                     for c in all_classes
                 ])
 
@@ -589,14 +820,13 @@ def streamlit_app():
                     barmode="group",
                     title="Detected Object Counts by Category",
                     color_discrete_map={
-                        f"{stats[0]['name']} (Two-Stage)": "#2563EB",
-                        f"{stats[1]['name']} (One-Stage)": "#F59E0B"
+                        f"{stats[0]['name']}": "#2563EB",
+                        f"{stats[1]['name']}": "#F59E0B"
                     }
                 )
                 fig_classes.update_layout(height=350, margin=dict(l=20, r=20, t=40, b=20))
                 st.plotly_chart(fig_classes, use_container_width=True)
 
-            # Export Suite
             st.markdown("---")
             st.subheader("💾 1-Click Export Suite")
             exp1, exp2 = st.columns(2)
@@ -615,6 +845,8 @@ def streamlit_app():
                 report_dict = {
                     "models": [stats[0]["name"], stats[1]["name"]],
                     "threshold": thr,
+                    "sahi_enabled": use_sahi,
+                    "stress_mode": stress_mode,
                     "stats": stats,
                     "detections": det_records[0] + det_records[1]
                 }
@@ -640,10 +872,7 @@ def streamlit_app():
             else:
                 sim_img = np.zeros((480, 640, 3), np.uint8)
 
-        # ----------------- SECTION 1: LIVE INFERENCE RACE
         st.markdown("### 🏁 1. The Live Model Race (Physical Speed Battle)")
-        st.write("Click below to watch both models compete in real time. Observe how YOLO finishes almost instantaneously while Faster R-CNN sequentially evaluates hundreds of region proposals.")
-
         if st.button("🏁 Start Live Inference Race!", type="primary", use_container_width=True):
             r_col1, r_col2 = st.columns(2)
             left_model = load(left_name)
@@ -660,7 +889,6 @@ def streamlit_app():
                 t_right = st.empty()
                 img_right = st.empty()
 
-            # Execute YOLO first (fast)
             t0_yolo = time.perf_counter()
             p_right.progress(20, text="Unified dense regression pass (P3-P5)...")
             time.sleep(0.04)
@@ -671,14 +899,11 @@ def streamlit_app():
             out_yolo = common.draw(sim_img, b_r, s_r, n_r, thr, common.FAMILY_BGR["one-stage"])
             img_right.image(cv2.cvtColor(out_yolo, cv2.COLOR_BGR2RGB), use_container_width=True)
 
-            # Animate Faster R-CNN's sequential pipeline while timing
-            t0_rcnn = time.perf_counter()
             p_left.progress(10, text="Stage 1: Resizing & FPN Feature Maps...")
             time.sleep(0.08)
             p_left.progress(25, text="Stage 1: RPN sliding anchor boxes (proposing 1,000 RoIs)...")
             time.sleep(0.12)
 
-            # RoI loop animation
             for roi_pct in [40, 55, 70, 85]:
                 p_left.progress(roi_pct, text=f"Stage 2: Sequential RoIAlign & MLP Head evaluation (RoI {int(roi_pct*10)}/1000)...")
                 time.sleep(0.15)
@@ -693,10 +918,7 @@ def streamlit_app():
             st.success(f"🎉 **Race Verdict:** {right_name} crossed the finish line **{speed_diff:.1f}x faster** than {left_name}!")
 
         st.markdown("---")
-
-        # ----------------- SECTION 2: ANIMATED LAYER-BY-LAYER VISUALIZER
         st.markdown("### 🎬 2. Animated Layer-by-Layer Neural Pipeline")
-        st.write("Watch an automated animation of the internal neural network layers processing the image.")
 
         sim_col1, sim_col2 = st.columns([1, 1])
         with sim_col1:
@@ -709,11 +931,9 @@ def streamlit_app():
         if st.button("▶️ Play Live Neural Animation", use_container_width=True):
             anim_placeholder = st.empty()
             caption_placeholder = st.empty()
-
             h, w = sim_img.shape[:2]
 
             if "Faster R-CNN" in chosen_pipeline:
-                # 1. Laser scanline
                 caption_placeholder.info("Stage 1.1: Backbone Convolutional Scanline Feature Extraction...")
                 for y in range(0, h, max(20, h // 8)):
                     f = sim_img.copy()
@@ -721,7 +941,6 @@ def streamlit_app():
                     anim_placeholder.image(cv2.cvtColor(f, cv2.COLOR_BGR2RGB), use_container_width=True)
                     time.sleep(delay)
 
-                # 2. FPN heatmap bloom
                 caption_placeholder.info("Stage 1.2: Feature Pyramid Network (FPN) Multi-scale activations...")
                 sim_model = load(left_name)
                 _, features = extract_rpn_proposals(sim_model, sim_img, max_props=10)
@@ -732,7 +951,6 @@ def streamlit_app():
                         anim_placeholder.image(cv2.cvtColor(blended, cv2.COLOR_BGR2RGB), use_container_width=True)
                         time.sleep(delay)
 
-                # 3. Anchor ripple & RPN Proposals
                 caption_placeholder.info("Stage 1.3: Region Proposal Network (RPN) anchor evaluation & candidate proposal swarm...")
                 props, _ = extract_rpn_proposals(sim_model, sim_img, max_props=80)
                 for k in [15, 35, 60, 80]:
@@ -740,7 +958,6 @@ def streamlit_app():
                     anim_placeholder.image(cv2.cvtColor(p_canvas, cv2.COLOR_BGR2RGB), use_container_width=True)
                     time.sleep(delay)
 
-                # 4. RoIAlign & Box Head
                 caption_placeholder.info("Stage 2: RoIAlign Bilinear Extraction & Box Head Refinement...")
                 (b, s, _, n), _ = common.timed_detect(sim_model, sim_img)
                 final_canvas = common.draw(sim_img, b, s, n, thr, common.FAMILY_BGR["two-stage"])
@@ -748,7 +965,6 @@ def streamlit_app():
                 caption_placeholder.success("✅ Faster R-CNN Pipeline Complete: High-precision localization achieved.")
 
             else:
-                # YOLOv8 Animation
                 caption_placeholder.info("Stage 1: Letterbox 640x640 Fixed Geometry Preprocessing...")
                 r = min(640 / h, 640 / w)
                 nh, nw = int(h * r), int(w * r)
@@ -759,14 +975,12 @@ def streamlit_app():
                 anim_placeholder.image(cv2.cvtColor(letterbox, cv2.COLOR_BGR2RGB), use_container_width=True)
                 time.sleep(delay * 2)
 
-                # Grids flashing
                 for stride in [32, 16, 8]:
                     caption_placeholder.info(f"Stage 2: Multi-scale Feature Pyramid Grid Stride {stride} (Stride 8 = small, 16 = med, 32 = large)...")
                     grid_canvas = draw_yolo_grid_demo(sim_img, stride=stride)
                     anim_placeholder.image(cv2.cvtColor(grid_canvas, cv2.COLOR_BGR2RGB), use_container_width=True)
                     time.sleep(delay)
 
-                # Single-pass anchor-free burst
                 caption_placeholder.info("Stage 3: Concurrent Single-Pass Anchor-Free Center Point Regression...")
                 sim_yolo = load(right_name)
                 (b, s, _, n), _ = common.timed_detect(sim_yolo, sim_img)
@@ -776,92 +990,47 @@ def streamlit_app():
                 anim_placeholder.image(cv2.cvtColor(active_canvas, cv2.COLOR_BGR2RGB), use_container_width=True)
                 time.sleep(delay * 2)
 
-                # Final NMS
                 caption_placeholder.info("Stage 4: Fast Vectorized NMS in < 3 ms...")
                 final_yolo = common.draw(sim_img, b, s, n, thr, common.FAMILY_BGR["one-stage"])
                 anim_placeholder.image(cv2.cvtColor(final_yolo, cv2.COLOR_BGR2RGB), use_container_width=True)
                 caption_placeholder.success("✅ YOLOv8 Pipeline Complete: Real-time throughput in one single pass.")
 
-        # Static Step-by-Step Viewer
-        st.markdown("---")
-        st.markdown("#### 🔬 3. Static Step-by-Step Layer Inspection")
-        step_opt = st.select_slider(
-            "Scrub Layer Manually:",
-            options=[
-                "1. FPN Feature Heatmap",
-                "2. RPN Proposals Swarm (Faster R-CNN)",
-                "3. RoIAlign 7x7 Sub-Pixel Grid",
-                "4. Anchor-Free Multi-Scale Grid (YOLO)",
-                "5. Latency Waterfall Chart"
-            ]
-        )
-
-        sim_model = load(left_name)
-
-        if step_opt == "1. FPN Feature Heatmap":
-            _, features = extract_rpn_proposals(sim_model, sim_img, max_props=5)
-            hm = extract_feature_heatmap(features, sim_img.shape)
-            if hm is not None:
-                st.image(cv2.cvtColor(cv2.addWeighted(sim_img, 0.6, hm, 0.4, 0), cv2.COLOR_BGR2RGB),
-                         caption="FPN Level P2 Convolutional Feature Heatmap (Real Deep Neural Activation)", use_container_width=True)
-        elif step_opt == "2. RPN Proposals Swarm (Faster R-CNN)":
-            props, _ = extract_rpn_proposals(sim_model, sim_img, max_props=80)
-            st.image(cv2.cvtColor(draw_rpn_visualization(sim_img, props, num_to_draw=60), cv2.COLOR_BGR2RGB),
-                     caption="Top Candidate Proposals generated by the Region Proposal Network before classification", use_container_width=True)
-        elif step_opt == "3. RoIAlign 7x7 Sub-Pixel Grid":
-            props, _ = extract_rpn_proposals(sim_model, sim_img, max_props=5)
-            best_box = props[0] if len(props) > 0 else [50, 50, 150, 150]
-            st.image(cv2.cvtColor(draw_roialign_demo(sim_img, best_box), cv2.COLOR_BGR2RGB),
-                     caption="RoIAlign 7x7 Feature Map Extraction with Bilinear Sample Points (No coordinate rounding)", use_container_width=True)
-        elif step_opt == "4. Anchor-Free Multi-Scale Grid (YOLO)":
-            sim_yolo = load(right_name)
-            (b, s, _, _), _ = common.timed_detect(sim_yolo, sim_img)
-            st.image(cv2.cvtColor(draw_yolo_grid_demo(sim_img, stride=32, active_boxes=b[s >= thr]), cv2.COLOR_BGR2RGB),
-                     caption="YOLO Anchor-Free Feature Grid: Active center cells predicting distance vectors", use_container_width=True)
-        elif step_opt == "5. Latency Waterfall Chart":
-            breakdown_df = pd.DataFrame([
-                {"Stage": "Backbone Feature Extraction", "Time (ms)": 45, "Model": "Faster R-CNN (Two-Stage)"},
-                {"Stage": "FPN Multi-Scale Pyramids", "Time (ms)": 25, "Model": "Faster R-CNN (Two-Stage)"},
-                {"Stage": "RPN Candidate Generation", "Time (ms)": 35, "Model": "Faster R-CNN (Two-Stage)"},
-                {"Stage": "RoIAlign Sub-Pixel Crop", "Time (ms)": 40, "Model": "Faster R-CNN (Two-Stage)"},
-                {"Stage": "Box Head MLP (1000 RoIs)", "Time (ms)": 4250, "Model": "Faster R-CNN (Two-Stage)"},
-                {"Stage": "Final Per-Class NMS", "Time (ms)": 16, "Model": "Faster R-CNN (Two-Stage)"},
-
-                {"Stage": "Backbone Feature Extraction", "Time (ms)": 22, "Model": "YOLOv8n (One-Stage)"},
-                {"Stage": "FPN Multi-Scale Pyramids", "Time (ms)": 16, "Model": "YOLOv8n (One-Stage)"},
-                {"Stage": "RPN Candidate Generation", "Time (ms)": 0, "Model": "YOLOv8n (One-Stage)"},
-                {"Stage": "RoIAlign Sub-Pixel Crop", "Time (ms)": 0, "Model": "YOLOv8n (One-Stage)"},
-                {"Stage": "Box Head MLP (1000 RoIs)", "Time (ms)": 12, "Model": "YOLOv8n (One-Stage)"},
-                {"Stage": "Final Per-Class NMS", "Time (ms)": 3, "Model": "YOLOv8n (One-Stage)"},
-            ])
-            fig_waterfall = px.bar(
-                breakdown_df,
-                x="Stage",
-                y="Time (ms)",
-                color="Model",
-                barmode="group",
-                title="Computational Latency Breakdown per Pipeline Stage",
-                color_discrete_map={"Faster R-CNN (Two-Stage)": "#2563EB", "YOLOv8n (One-Stage)": "#F59E0B"}
-            )
-            fig_waterfall.update_layout(height=380, margin=dict(l=20, r=20, t=40, b=20))
-            st.plotly_chart(fig_waterfall, use_container_width=True)
-
     # =========================================================================
-    # TAB 3: VISUAL CONSENSUS & OBJECT-LEVEL ZOOM INSPECTOR
+    # TAB 3: GROUND TRUTH & VISUAL CONSENSUS
     # =========================================================================
     with tab_consensus:
-        st.subheader("🎯 Visual Consensus, Diff Map & Sub-Pixel Object Zoom")
-        st.write("Compare exact bounding box overlap between Faster R-CNN and YOLOv8 to see where they **agree**, where **Faster R-CNN caught small objects missed by YOLO**, and inspect specific objects with sub-pixel magnification.")
+        st.subheader("🎯 Ground Truth Evaluation, Error Matrix & Consensus Diff")
+        st.write("Compare predictions against **Official COCO Human Ground Truth** (TP / FP / FN, Precision, Recall, F1) and inspect model agreement.")
 
         curr_img = st.session_state.get("active_sim_image")
         curr_raw = st.session_state.get("last_raw_results")
+        curr_coco_id = st.session_state.get("active_coco_id")
 
         if curr_img is not None and curr_raw is not None:
             b1, s1, n1 = curr_raw[0][3], curr_raw[0][4], curr_raw[0][5]
             b2, s2, n2 = curr_raw[1][3], curr_raw[1][4], curr_raw[1][5]
 
-            matches, u1, u2 = compute_iou_matches(b1, b2, iou_thresh=iou_match_thr)
+            # 1. Ground Truth Section if available
+            gt_boxes, gt_names = load_coco_ground_truth(curr_coco_id) if curr_coco_id else (None, None)
+            if gt_boxes is not None:
+                st.markdown("#### 🏆 Official Ground Truth Evaluation (COCO val2017)")
+                eval1 = evaluate_against_gt(b1, n1, gt_boxes, gt_names, iou_thresh=0.50)
+                eval2 = evaluate_against_gt(b2, n2, gt_boxes, gt_names, iou_thresh=0.50)
 
+                gt_cols = st.columns(4)
+                gt_cols[0].metric("Ground Truth Objects", f"{len(gt_boxes)} objects")
+                gt_cols[1].metric(f"{left_name.split('-')[0]} F1-Score", f"{eval1['f1']*100:.1f}%", f"P: {eval1['precision']*100:.0f}%, R: {eval1['recall']*100:.0f}%")
+                gt_cols[2].metric(f"{right_name} F1-Score", f"{eval2['f1']*100:.1f}%", f"P: {eval2['precision']*100:.0f}%, R: {eval2['recall']*100:.0f}%")
+                gt_cols[3].metric("TP / FP / FN (FRCNN vs YOLO)", f"TP: {eval1['tp']} vs {eval2['tp']}", f"Misses: {eval1['fn']} vs {eval2['fn']}")
+
+                show_gt = st.checkbox("Show Gold Ground Truth Boxes on Canvas", value=True)
+                gt_canvas = draw_gt_overlay(curr_img, gt_boxes, gt_names) if show_gt else curr_img
+                st.image(cv2.cvtColor(gt_canvas, cv2.COLOR_BGR2RGB), caption=f"Ground Truth Annotations ({len(gt_boxes)} human-verified labels)", use_container_width=True)
+                st.markdown("---")
+
+            # 2. Consensus Diff Map
+            st.markdown("#### ⚔️ Consensus Diff Map (Faster R-CNN vs YOLOv8)")
+            matches, u1, u2 = compute_iou_matches(b1, b2, iou_thresh=iou_match_thr)
             total_unique = len(matches) + len(u1) + len(u2)
             consensus_rate = (len(matches) / total_unique * 100) if total_unique > 0 else 0
             mean_iou = np.mean([m[2] for m in matches]) if len(matches) > 0 else 0.0
@@ -874,14 +1043,12 @@ def streamlit_app():
 
             consensus_canvas = draw_consensus_map(curr_img, b1, s1, n1, b2, s2, n2, matches, u1, u2)
             st.image(cv2.cvtColor(consensus_canvas, cv2.COLOR_BGR2RGB),
-                     caption="Visual Consensus Overlay: Green = Agreed by both | Blue = Faster R-CNN only | Orange = YOLO only",
+                     caption="Consensus Overlay: Green = Agreed | Blue = Faster R-CNN only | Orange = YOLO only",
                      use_container_width=True)
 
-            # Sub-Pixel Object-Level Inspector
+            # Sub-Pixel Object Zoom
             st.markdown("---")
             st.subheader("🔍 Sub-Pixel Object Crop Inspector")
-            st.write("Select any detected object below to zoom into its bounding box and examine how both architectures localized it.")
-
             object_options = []
             for idx, (i, j, iou_score) in enumerate(matches):
                 object_options.append(f"🟢 Agreed Object #{idx+1}: {n1[i]} (IoU {iou_score:.2f})")
@@ -892,7 +1059,6 @@ def streamlit_app():
 
             if object_options:
                 chosen_obj = st.selectbox("Choose Detected Object to Zoom In:", object_options)
-                # Find target box
                 t_box = None
                 t_meta = {}
                 if chosen_obj.startswith("🟢"):
@@ -934,43 +1100,59 @@ def streamlit_app():
                             st.latex(r"\text{IoU} = \frac{\text{Area}(A \cap B)}{\text{Area}(A \cup B)} = " + f"{t_meta['iou']:.2f}")
                         st.markdown(f"• **Faster R-CNN Confidence:** `{t_meta['frcnn_score']*100:.1f}%`")
                         st.markdown(f"• **YOLOv8 Confidence:** `{t_meta['yolo_score']*100:.1f}%`")
-            else:
-                st.write("No objects detected above threshold.")
-
-            # Sensitivity Sweep Curve
-            st.markdown("---")
-            st.subheader("📈 Real-Time Confidence Sensitivity Curve")
-            sweep_thrs = np.linspace(0.1, 0.9, 9)
-            raw_scores1 = curr_raw[0][1]
-            raw_scores2 = curr_raw[1][1]
-
-            curve_data = []
-            for t_val in sweep_thrs:
-                curve_data.append({
-                    "Confidence Threshold": round(float(t_val), 2),
-                    f"{left_name} (Two-Stage)": int((raw_scores1 >= t_val).sum()),
-                    f"{right_name} (One-Stage)": int((raw_scores2 >= t_val).sum())
-                })
-            df_curve = pd.DataFrame(curve_data)
-
-            fig_curve = px.line(
-                df_curve,
-                x="Confidence Threshold",
-                y=[f"{left_name} (Two-Stage)", f"{right_name} (One-Stage)"],
-                title="Bounding Box Retention vs Confidence Threshold",
-                markers=True,
-                color_discrete_map={
-                    f"{left_name} (Two-Stage)": "#2563EB",
-                    f"{right_name} (One-Stage)": "#F59E0B"
-                }
-            )
-            fig_curve.update_layout(height=350, margin=dict(l=20, r=20, t=40, b=20))
-            st.plotly_chart(fig_curve, use_container_width=True)
         else:
-            st.info("Run a detection in the 'Live Detection Studio' tab first to activate the Visual Consensus & Diff Map.")
+            st.info("Run detection in the 'Live Detection Studio' tab first.")
 
     # =========================================================================
-    # TAB 4: INTERACTIVE BENCHMARK & ANALYTICS STUDIO
+    # TAB 4: VIDEO FILE PROCESSOR
+    # =========================================================================
+    with tab_video:
+        st.subheader("🎥 Video File Side-by-Side Batch Processor")
+        st.write("Upload an MP4, AVI, or MOV video clip (dashcam, drone footage, sports) to process and render a side-by-side detection video.")
+
+        video_file = st.file_uploader("Upload Video File:", type=["mp4", "avi", "mov", "mkv"])
+        frame_skip = st.slider("Process Every Nth Frame (Speed Optimization):", 1, 5, 2)
+        max_vid_frames = st.slider("Max Frames to Process:", 10, 200, 50, 10)
+
+        if video_file and st.button("▶️ Process Video Side-by-Side", type="primary"):
+            tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+            tfile.write(video_file.read())
+            tfile.close()
+
+            cap = cv2.VideoCapture(tfile.name)
+            fps_src = cap.get(cv2.CAP_PROP_FPS) or 25
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+            st.write(f"Source video: {total_frames} frames, {fps_src:.1f} FPS.")
+            prog_bar = st.progress(0, text="Processing frames...")
+            vid_col = st.empty()
+
+            left_m, right_m = load(left_name), load(right_name)
+            frame_idx = 0
+            processed = 0
+
+            while cap.isOpened() and processed < max_vid_frames:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                if frame_idx % frame_skip == 0:
+                    outs, _, _, _ = run_pair_detailed(left_m, right_m, frame, thr)
+                    gap = np.full((frame.shape[0], 8, 3), 255, dtype=np.uint8)
+                    comp_frame = np.hstack([outs[0], gap, outs[1]])
+                    vid_col.image(cv2.cvtColor(comp_frame, cv2.COLOR_BGR2RGB), use_container_width=True)
+                    processed += 1
+                    prog_bar.progress(processed / max_vid_frames, text=f"Processed frame {processed}/{max_vid_frames}...")
+                frame_idx += 1
+
+            cap.release()
+            try:
+                os.unlink(tfile.name)
+            except Exception:
+                pass
+            st.success(f"Video processing finished ({processed} frames evaluated).")
+
+    # =========================================================================
+    # TAB 5: INTERACTIVE BENCHMARK & ANALYTICS STUDIO
     # =========================================================================
     with tab_benchmark:
         st.subheader("📊 Comprehensive COCO val2017 Benchmark")
@@ -1082,10 +1264,10 @@ def streamlit_app():
                 use_container_width=True
             )
         else:
-            st.warning("Benchmark results file (`results/results.json`) not found. Run `uv run bench` to generate it.")
+            st.warning("Benchmark results file not found.")
 
     # =========================================================================
-    # TAB 5: EDGE HARDWARE DEPLOYMENT & PRODUCTION ADVISOR
+    # TAB 6: EDGE HARDWARE DEPLOYMENT ADVISOR
     # =========================================================================
     with tab_deploy:
         st.subheader("🚀 Edge Hardware Deployment & Production Feasibility Advisor")
@@ -1104,11 +1286,7 @@ def streamlit_app():
                 ]
             )
         with d_col2:
-            target_fps = st.select_slider(
-                "Target Frame Rate Requirement:",
-                options=[1, 5, 15, 30, 60, 120],
-                value=30
-            )
+            target_fps = st.select_slider("Target Frame Rate Requirement:", options=[1, 5, 15, 30, 60, 120], value=30)
 
         budget_ms = 1000.0 / target_fps
         st.write(f"⏱️ **Target Latency Budget:** $\\le$ **{budget_ms:.1f} ms per frame** ({target_fps} FPS)")
@@ -1163,20 +1341,11 @@ def streamlit_app():
             })
         st.table(pd.DataFrame(dep_rows))
 
-        st.markdown("#### 💡 Expert Production Recommendation")
-        if target_fps >= 30 and "Raspberry Pi" in hw_choice:
-            st.warning("⚠️ **Edge Alert:** On a Raspberry Pi, YOLOv8n with INT8 quantization is the ONLY architecture that approaches real-time speed. Faster R-CNN will drop below 2 FPS, causing major stream lag.")
-        elif target_fps >= 30:
-            st.success(f"🎯 **Best Choice for {target_fps} FPS on {chosen_key}:** **YOLOv8s** or **YOLOv8n**. Both satisfy your latency budget with ample thermal and compute headroom.")
-        else:
-            st.info(f"🎯 **For Offline / Low-FPS ({target_fps} FPS):** You can safely deploy **Faster R-CNN ResNet-50** if maximizing small object detection accuracy is the primary objective.")
-
     # =========================================================================
-    # TAB 6: ARCHITECTURE & METHODOLOGY DEEP DIVE
+    # TAB 7: ARCHITECTURE & METHODOLOGY DEEP DIVE
     # =========================================================================
     with tab_architecture:
         st.subheader("🧠 Architectural Deep Dive: Two-Stage vs One-Stage Detectors")
-
         arch_col1, arch_col2 = st.columns(2)
         with arch_col1:
             st.markdown("""
@@ -1184,12 +1353,9 @@ def streamlit_app():
             **Core Concept:** Divide detection into proposal generation followed by refinement.
 
             1. **Backbone & FPN:** Feature extraction using ResNet-50 / MobileNetV3 + Feature Pyramid Network.
-            2. **Stage 1 (Region Proposal Network - RPN):** A lightweight convolutional network slides across pyramid features to propose ~1000 candidate regions of interest (RoIs) with binary objectness scores.
+            2. **Stage 1 (Region Proposal Network - RPN):** Lightweight convolutional network slides across pyramid features to propose ~1000 candidate regions of interest (RoIs) with binary objectness scores.
             3. **RoIAlign:** Preserves precise spatial alignment without coordinate quantization by bilinearly interpolating feature maps.
             4. **Stage 2 (Box Head):** Two-headed fully connected network refines bounding coordinates and predicts multi-class probabilities for each RoI.
-
-            **Pros:** High localization accuracy, superior performance on small & overlapping objects.
-            **Cons:** High computational latency, sequential processing bottlenecks, large memory footprint.
             """)
 
         with arch_col2:
@@ -1201,13 +1367,9 @@ def streamlit_app():
             2. **Anchor-Free Decoupled Head:** Separates classification and bounding box regression into parallel branches, directly predicting distance from grid cell centers (Distribution Focal Loss).
             3. **Task-Aligned Assigner:** Dynamically selects optimal positive anchors during training based on joint classification confidence and IoU overlap.
             4. **Unified Forward Pass:** Evaluates all spatial positions simultaneously in a single pass without intermediate proposal extraction.
-
-            **Pros:** Ultra-fast real-time inference (up to 80+x speedup), lightweight weights, edge/embedded friendly.
-            **Cons:** Slightly lower precision on densely occluded and minute objects without custom tiling.
             """)
 
         st.markdown("---")
-        st.subheader("🔬 Direct Comparison Matrix")
         comp_data = {
             "Dimension": [
                 "Pipeline Architecture",
@@ -1242,13 +1404,8 @@ def streamlit_app():
         }
         st.table(pd.DataFrame(comp_data))
 
-        arch_img_path = os.path.join(RESULTS_DIR, "fig_architectures.png")
-        if os.path.exists(arch_img_path):
-            st.markdown("#### Architectural Block Diagram")
-            st.image(arch_img_path, caption="Two-Stage (Faster R-CNN) vs One-Stage (YOLOv8) Structural Pipelines", use_container_width=True)
-
     # =========================================================================
-    # TAB 7: COMPUTER VISION INTELLIGENCE CHAT ASSISTANT
+    # TAB 8: COMPUTER VISION INTELLIGENCE CHAT ASSISTANT
     # =========================================================================
     with tab_chat:
         st.subheader("💬 Computer Vision Intelligence Assistant")
@@ -1309,9 +1466,9 @@ def generate_assistant_response(query, bench_data, live_stats=None):
             "**Architectural Verdict:** The classic rule 'two-stage is accurate, one-stage is fast' is partially evolving. Modern anchor-free one-stage detectors have closed the overall mAP gap to under 3%, but two-stage architectures still retain an edge for dense sub-pixel localization."
         )
 
-    if "small" in q or "tiny" in q:
+    if "small" in q or "tiny" in q or "sahi" in q:
         return (
-            "### 🔍 Small Object Performance Comparison\n\n"
+            "### 🔍 Small Object Performance Comparison & SAHI Solution\n\n"
             "According to the COCO val2017 benchmark from this project:\n"
             "- **Faster R-CNN ResNet-50-FPN v2:** Achieves **40.1% mAP_small**.\n"
             "- **YOLOv8s:** Achieves **36.6% mAP_small**.\n"
@@ -1319,7 +1476,7 @@ def generate_assistant_response(query, bench_data, live_stats=None):
             "**Why Two-Stage dominates small objects:**\n"
             "1. **RoIAlign:** Faster R-CNN uses RoIAlign to sample sub-pixel features with bilinear interpolation without coordinate quantization.\n"
             "2. **Feature Resolution:** Faster R-CNN processes input images resized to 800px on the short side (vs 640px letterbox for YOLO), providing higher spatial pixel density for small items.\n"
-            "3. **Two-Stage Refinement:** Candidate bounding boxes proposed by the RPN undergo a second dedicated regression step in the MLP head."
+            "3. **SAHI Slicing:** In industry, **SAHI (Slicing Aided Hyper Inference)** slices the image into 2x2 overlapping crops, running YOLO on each at full resolution to close the small-object gap!"
         )
 
     if "fast" in q or "speed" in q or "latency" in q or "fps" in q or "why is yolo" in q:
@@ -1339,17 +1496,7 @@ def generate_assistant_response(query, bench_data, live_stats=None):
             "**Key Reasons:**\n"
             "1. **Throughput:** On constrained CPU/NPU hardware, YOLOv8n achieves real-time frame rates (18–30+ FPS) suitable for video streams and drones.\n"
             "2. **Memory Footprint:** At only **6.5 MB**, YOLOv8n easily fits in L3 cache or embedded flash memory, whereas Faster R-CNN requires 175 MB.\n"
-            "3. **Export Compatibility:** Ultralytics provides 1-click export to ONNX, TensorRT, CoreML, TFLite, and OpenVINO with INT8 quantization.\n\n"
-            "*Exception:* If you are building an offline server inspection pipeline (e.g. medical radiology, high-altitude satellite reconnaissance) where latency does not matter and every small object counts, Faster R-CNN R50 is preferred."
-        )
-
-    if "map" in q or "map50" in q or "metric" in q:
-        return (
-            "### 🎯 Understanding mAP Metrics (COCO Evaluation)\n\n"
-            "- **mAP [0.50:0.95] (Primary metric):** Average Precision computed across 10 IoU thresholds from 0.50 to 0.95 with step 0.05. It rewards detectors that predict tightly fitted bounding boxes.\n"
-            "- **mAP50:** Average Precision evaluated at an easy IoU threshold of 0.50. This measures whether the object was detected roughly in the right area.\n"
-            "- **mAP75:** Evaluated at a strict IoU threshold of 0.75, penalizing loose bounding boxes.\n"
-            "- **AR100:** Average Recall given up to 100 detections per image."
+            "3. **Export Compatibility:** Ultralytics provides 1-click export to ONNX, TensorRT, CoreML, TFLite, and OpenVINO with INT8 quantization."
         )
 
     return (
@@ -1359,7 +1506,7 @@ def generate_assistant_response(query, bench_data, live_stats=None):
         "- **Speed Winner:** YOLOv8n achieves **18.7+ FPS** on CPU (~53 ms), making it suitable for live video.\n"
         "- **Accuracy Winner:** Faster R-CNN R50-FPN v2 achieves **56.0% mAP** on COCO val2017, leading significantly on small objects (40.1% vs 29.0%).\n"
         "- **Best Balance:** YOLOv8s delivers **53.8% mAP** (nearly matching Faster R-CNN) while running at **7.5 FPS** (~133 ms), making it an outstanding general-purpose detector.\n\n"
-        "Feel free to explore the new **Live Inference Race** and **Sub-Pixel Object Inspector** in the dashboard!"
+        "Feel free to explore the new **Ground Truth Error Matrix**, **SAHI Slicing**, and **Video File Processor** tabs!"
     )
 
 
