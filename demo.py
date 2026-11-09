@@ -83,10 +83,23 @@ SAMPLE_PRESETS = [
 
 
 def load_warm(name):
-    """Load a model and run it once on a blank image so the first shown timing is realistic."""
-    info = common.load_model(name, common.get_device(), score_thresh=DEMO_SCORE)
-    common.detect(info, np.zeros((480, 640, 3), np.uint8))
-    return info
+    """Load a model and run it once on a blank image so the first shown timing is realistic.
+    Includes robust fallback in case of network/download errors.
+    """
+    try:
+        info = common.load_model(name, common.get_device(), score_thresh=DEMO_SCORE)
+        common.detect(info, np.zeros((480, 640, 3), np.uint8))
+        return info
+    except Exception as e:
+        # Fallback to guaranteed local model
+        fallback = "YOLOv8s" if name in ONE_STAGE else "FasterRCNN-MobileNetV3-FPN"
+        try:
+            info = common.load_model(fallback, common.get_device(), score_thresh=DEMO_SCORE)
+            common.detect(info, np.zeros((480, 640, 3), np.uint8))
+            info["warning"] = f"⚠️ Could not load requested model '{name}' ({e}). Automatically using offline fallback '{fallback}'."
+            return info
+        except Exception:
+            raise e
 
 
 def capture_laptop_camera_frame(cam_idx=1):
@@ -748,6 +761,10 @@ def streamlit_app():
         # Process and show detection for static inputs
         if img is not None:
             left, right = load(left_name), load(right_name)
+            if "warning" in left:
+                st.warning(left["warning"])
+            if "warning" in right:
+                st.warning(right["warning"])
             outs, det_records, raw_results, stats = run_pair_detailed(left, right, img, thr, use_sahi=use_sahi)
 
             st.session_state["active_sim_image"] = img
